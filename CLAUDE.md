@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DevPocket is an AI-powered mobile terminal application that brings command-line functionality to mobile devices. The project consists of a FastAPI backend server (planned) and Flutter mobile application (planned), with documentation currently in the `docs/` directory.
+DevPocket is an AI-powered mobile terminal application that brings command-line functionality to mobile devices. The project consists of a Fastify backend server (planned) and Flutter mobile application (planned), with documentation currently in the `docs/` directory.
 
 Key features:
 - **BYOK (Bring Your Own Key)** model for AI features using OpenRouter
