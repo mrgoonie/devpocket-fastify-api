@@ -33,7 +33,7 @@ describe('Terminal Module Integration Tests', () => {
     await prisma.session.deleteMany();
     await prisma.user.deleteMany();
 
-    // Create test user and get auth token
+    // Create test user
     const registerResponse = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/register',
@@ -45,9 +45,21 @@ describe('Terminal Module Integration Tests', () => {
     });
 
     expect(registerResponse.statusCode).toBe(201);
-    const registerData = registerResponse.json();
-    authToken = registerData.data.access_token;
-    // userId = registerData.data.user.id;
+
+    // Login to get auth token
+    const loginResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        email: 'test@example.com',
+        password: 'TestPassword123!'
+      }
+    });
+
+    expect(loginResponse.statusCode).toBe(200);
+    const loginData = loginResponse.json();
+    authToken = loginData.data.access_token;
+    // userId = loginData.data.user.id;
   });
 
   afterEach(async () => {

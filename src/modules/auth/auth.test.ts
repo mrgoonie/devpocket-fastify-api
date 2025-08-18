@@ -224,7 +224,7 @@ describe('Authentication Module', () => {
 
       expect(response.statusCode).toBe(401);
       const json = response.json();
-      expect(json.code).toBe('INVALID_TOKEN');
+      expect(json.code).toBe('AUTH_FAILED');
     });
   });
 

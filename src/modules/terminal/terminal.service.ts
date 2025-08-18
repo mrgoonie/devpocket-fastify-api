@@ -366,19 +366,16 @@ export class TerminalService {
       }
 
       // Create PTY session (actual session creation happens via WebSocket)
-      const sessionId = `session_${userId}_${Date.now()}`;
-      
       const session = await prisma.terminalSession.create({
         data: {
-          id: sessionId,
           user_id: userId,
           profile_id: data.profile_id,
-          session_id: sessionId,
+          session_id: `session_${userId}_${Date.now()}`,
           status: SessionStatus.ACTIVE
         }
       });
 
-      logger.info(`Terminal session created: ${sessionId} for user: ${userId}`);
+      logger.info(`Terminal session created: ${session.session_id} for user: ${userId}`);
 
       return this.formatTerminalSessionResponse(session);
 
