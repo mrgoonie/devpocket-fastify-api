@@ -35,8 +35,8 @@ describe('Payment Module', () => {
     });
 
     const loginData = JSON.parse(loginResponse.payload);
-    authToken = loginData.data.access_token;
-    testUser = loginData.data.user;
+    authToken = loginData.data?.access_token;
+    testUser = loginData.data?.user;
   });
 
   afterAll(async () => {

@@ -184,7 +184,8 @@ describe('Authentication Module', () => {
         },
       });
 
-      accessToken = loginResponse.json().data.access_token;
+      const loginData = loginResponse.json();
+      accessToken = loginData.data?.access_token;
     });
 
     it('should return current user with valid token', async () => {
@@ -248,7 +249,8 @@ describe('Authentication Module', () => {
         },
       });
 
-      refreshToken = loginResponse.json().data.refresh_token;
+      const loginData = loginResponse.json();
+      refreshToken = loginData.data?.refresh_token;
     });
 
     it('should refresh token successfully', async () => {
@@ -302,7 +304,8 @@ describe('Authentication Module', () => {
         },
       });
 
-      accessToken = loginResponse.json().data.access_token;
+      const loginData = loginResponse.json();
+      accessToken = loginData.data?.access_token;
     });
 
     it('should logout successfully', async () => {

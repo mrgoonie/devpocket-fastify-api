@@ -38,8 +38,8 @@ describe('Terminal Module Integration Tests', () => {
       method: 'POST',
       url: '/api/v1/auth/register',
       payload: {
-        email: 'test@example.com',
-        username: 'testuser',
+        email: 'terminal-test@example.com',
+        username: 'terminaluser',
         password: 'TestPassword123!'
       }
     });
@@ -51,7 +51,7 @@ describe('Terminal Module Integration Tests', () => {
       method: 'POST',
       url: '/api/v1/auth/login',
       payload: {
-        email: 'test@example.com',
+        email: 'terminal-test@example.com',
         password: 'TestPassword123!'
       }
     });

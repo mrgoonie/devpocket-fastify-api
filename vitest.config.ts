@@ -8,6 +8,8 @@ export default defineConfig({
     setupFiles: ['./src/tests/setup.ts'],
     include: ['src/**/*.{test,spec}.{js,ts}'],
     exclude: ['node_modules', 'dist'],
+    fileParallelism: false, // Run test files sequentially to avoid DB conflicts
+    maxConcurrency: 1, // Only one test at a time
     env: {
       NODE_ENV: 'test',
       DATABASE_URL: 'postgresql://postgres:postgresql@localhost:5432/devpocket_test?schema=public',
