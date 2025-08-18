@@ -8,7 +8,7 @@ const connection = new IORedis(config.REDIS_URL, {
   maxRetriesPerRequest: 3,
 });
 
-// Email worker - will be implemented with email service
+// Email worker
 export const emailWorker = new Worker(
   'email',
   async (job) => {
@@ -17,21 +17,15 @@ export const emailWorker = new Worker(
     logger.info(`Processing email job: ${type}`, { jobId: job.id });
     
     try {
+      // Import EmailService dynamically to avoid circular imports
+      const { EmailService } = await import('@/shared/email/email.service.js');
+      
       switch (type) {
-        case 'welcome':
-          // await sendWelcomeEmail(data);
-          logger.info('Welcome email would be sent here', data);
-          break;
-        case 'password-reset':
-          // await sendPasswordResetEmail(data);
-          logger.info('Password reset email would be sent here', data);
-          break;
-        case 'verification':
-          // await sendVerificationEmail(data);
-          logger.info('Verification email would be sent here', data);
+        case 'send-email':
+          await EmailService.sendEmail(data);
           break;
         default:
-          throw new Error(`Unknown email type: ${type}`);
+          throw new Error(`Unknown email job type: ${type}`);
       }
       
       logger.info(`Email job ${job.id} completed successfully`);

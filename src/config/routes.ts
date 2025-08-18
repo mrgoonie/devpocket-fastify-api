@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
+import { authRoutes } from '@/modules/auth/auth.routes.js';
 
 export async function setupRoutes(fastify: FastifyInstance) {
   // API prefix
   await fastify.register(async function apiRoutes(fastify) {
-    // Auth routes - will be implemented in authentication module
-    // await fastify.register(authRoutes, { prefix: '/auth' });
+    // Auth routes
+    await fastify.register(authRoutes, { prefix: '/auth' });
     
     // SSH routes - will be implemented in terminal module  
     // await fastify.register(sshRoutes, { prefix: '/ssh' });

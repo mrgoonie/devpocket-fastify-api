@@ -1,7 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '@/config/environment.js';
+import prismaPlugin from '@/shared/database/plugin.js';
 
 export async function setupPlugins(fastify: FastifyInstance) {
+  // Register Prisma plugin
+  await fastify.register(prismaPlugin);
+
   // Register CORS
   await fastify.register(import('@fastify/cors'), {
     origin: config.isDevelopment ? true : [config.FRONTEND_URL],

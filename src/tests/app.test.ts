@@ -3,7 +3,7 @@ import { buildApp } from '@/app.js';
 // import type { FastifyInstance } from 'fastify';
 
 describe('App Integration Tests', () => {
-  let app: any;
+  let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
     app = await buildApp();

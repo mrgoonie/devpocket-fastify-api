@@ -1,0 +1,417 @@
+import bcrypt from 'bcrypt';
+import crypto from 'crypto';
+import { prisma } from '@/shared/database/client.js';
+import { logger } from '@/shared/logger.js';
+import type { RegisterInput, LoginInput, UserResponse } from './auth.schema.js';
+import type { User } from '@prisma/client';
+
+// Constants
+const BCRYPT_ROUNDS = 12;
+const REFRESH_TOKEN_EXPIRES_IN_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const PASSWORD_RESET_EXPIRES_IN_MS = 60 * 60 * 1000; // 1 hour
+const EMAIL_VERIFICATION_EXPIRES_IN_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+export class AuthService {
+  // Hash password using bcrypt
+  static async hashPassword(password: string): Promise<string> {
+    try {
+      return await bcrypt.hash(password, BCRYPT_ROUNDS);
+    } catch (error) {
+      logger.error('Error hashing password:', error);
+      throw new Error('Failed to hash password');
+    }
+  }
+
+  // Verify password against hash
+  static async verifyPassword(password: string, hash: string): Promise<boolean> {
+    try {
+      return await bcrypt.compare(password, hash);
+    } catch (error) {
+      logger.error('Error verifying password:', error);
+      return false;
+    }
+  }
+
+  // Generate secure random token
+  static generateSecureToken(): string {
+    return crypto.randomBytes(32).toString('hex');
+  }
+
+  // Convert User model to response format
+  static formatUserResponse(user: User): UserResponse {
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      email_verified: user.email_verified,
+      created_at: user.created_at.toISOString(),
+      updated_at: user.updated_at.toISOString(),
+    };
+  }
+
+  // Register new user
+  static async register(input: RegisterInput): Promise<UserResponse> {
+    try {
+      // Check if user already exists
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: input.email },
+            { username: input.username },
+          ],
+        },
+      });
+
+      if (existingUser) {
+        if (existingUser.email === input.email) {
+          throw new Error('Email already registered');
+        }
+        if (existingUser.username === input.username) {
+          throw new Error('Username already taken');
+        }
+      }
+
+      // Hash password
+      const hashedPassword = await this.hashPassword(input.password);
+
+      // Create user
+      const user = await prisma.user.create({
+        data: {
+          email: input.email,
+          username: input.username,
+          password_hash: hashedPassword,
+          email_verified: false,
+        },
+      });
+
+      // Create email verification token
+      const verificationToken = this.generateSecureToken();
+      await prisma.emailVerificationToken.create({
+        data: {
+          user_id: user.id,
+          token: verificationToken,
+          expires_at: new Date(Date.now() + EMAIL_VERIFICATION_EXPIRES_IN_MS),
+        },
+      });
+
+      logger.info(`User registered: ${user.email}`, { userId: user.id });
+
+      // Send verification email
+      try {
+        const { EmailService } = await import('@/shared/email/email.service.js');
+        await EmailService.sendWelcomeEmail(user.email, user.username, verificationToken);
+      } catch (error) {
+        logger.warn('Failed to send welcome email:', error);
+        // Don't fail registration if email fails
+      }
+
+      return this.formatUserResponse(user);
+    } catch (error) {
+      logger.error('Error registering user:', error);
+      throw error;
+    }
+  }
+
+  // Authenticate user and create session
+  static async login(input: LoginInput): Promise<{ user: UserResponse; session: { id: string; token: string } }> {
+    try {
+      // Find user by email
+      const user = await prisma.user.findUnique({
+        where: { email: input.email },
+      });
+
+      if (!user) {
+        throw new Error('Invalid email or password');
+      }
+
+      // Verify password
+      const isValidPassword = await this.verifyPassword(input.password, user.password_hash);
+      if (!isValidPassword) {
+        throw new Error('Invalid email or password');
+      }
+
+      // Create refresh token
+      const refreshToken = this.generateSecureToken();
+      
+      // Create session
+      const session = await prisma.session.create({
+        data: {
+          user_id: user.id,
+          token: refreshToken,
+          device_id: input.device_id,
+          expires_at: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_MS),
+        },
+      });
+
+      logger.info(`User logged in: ${user.email}`, { 
+        userId: user.id, 
+        sessionId: session.id,
+        deviceId: input.device_id 
+      });
+
+      return {
+        user: this.formatUserResponse(user),
+        session,
+      };
+    } catch (error) {
+      logger.error('Error logging in user:', error);
+      throw error;
+    }
+  }
+
+  // Logout user by invalidating session
+  static async logout(sessionToken: string): Promise<void> {
+    try {
+      const deletedSession = await prisma.session.delete({
+        where: { token: sessionToken },
+      });
+      
+      logger.info('User logged out', { sessionId: deletedSession.id });
+    } catch (error) {
+      // Session might not exist, which is fine for logout
+      logger.warn('Session not found during logout:', error);
+    }
+  }
+
+  // Refresh access token using refresh token
+  static async refreshToken(refreshToken: string): Promise<{ userId: string; sessionId: string }> {
+    try {
+      // Find valid session
+      const session = await prisma.session.findUnique({
+        where: { 
+          token: refreshToken,
+        },
+        include: {
+          user: true,
+        },
+      });
+
+      if (!session) {
+        throw new Error('Invalid refresh token');
+      }
+
+      if (session.expires_at < new Date()) {
+        // Clean up expired session
+        await prisma.session.delete({
+          where: { id: session.id },
+        });
+        throw new Error('Refresh token expired');
+      }
+
+      return {
+        userId: session.user_id,
+        sessionId: session.id,
+      };
+    } catch (error) {
+      logger.error('Error refreshing token:', error);
+      throw error;
+    }
+  }
+
+  // Find user by ID
+  static async findUserById(userId: string): Promise<UserResponse | null> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      return user ? this.formatUserResponse(user) : null;
+    } catch (error) {
+      logger.error('Error finding user by ID:', error);
+      throw error;
+    }
+  }
+
+  // Request password reset
+  static async requestPasswordReset(email: string): Promise<void> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (!user) {
+        // Don't reveal if email exists - return success anyway
+        logger.warn(`Password reset requested for non-existent email: ${email}`);
+        return;
+      }
+
+      // Delete any existing reset tokens for this user
+      await prisma.passwordResetToken.deleteMany({
+        where: { user_id: user.id },
+      });
+
+      // Create new reset token
+      const resetToken = this.generateSecureToken();
+      await prisma.passwordResetToken.create({
+        data: {
+          user_id: user.id,
+          token: resetToken,
+          expires_at: new Date(Date.now() + PASSWORD_RESET_EXPIRES_IN_MS),
+        },
+      });
+
+      logger.info(`Password reset requested: ${user.email}`, { userId: user.id });
+
+      // Send password reset email
+      try {
+        const { EmailService } = await import('@/shared/email/email.service.js');
+        await EmailService.sendPasswordResetEmail(user.email, user.username, resetToken);
+      } catch (error) {
+        logger.warn('Failed to send password reset email:', error);
+        // Don't fail the request if email fails
+      }
+    } catch (error) {
+      logger.error('Error requesting password reset:', error);
+      throw error;
+    }
+  }
+
+  // Reset password using token
+  static async resetPassword(token: string, newPassword: string): Promise<void> {
+    try {
+      // Find valid reset token
+      const resetToken = await prisma.passwordResetToken.findUnique({
+        where: { token },
+        include: { user: true },
+      });
+
+      if (!resetToken) {
+        throw new Error('Invalid or expired reset token');
+      }
+
+      if (resetToken.expires_at < new Date()) {
+        // Clean up expired token
+        await prisma.passwordResetToken.delete({
+          where: { id: resetToken.id },
+        });
+        throw new Error('Reset token expired');
+      }
+
+      // Hash new password
+      const hashedPassword = await this.hashPassword(newPassword);
+
+      // Update user password and delete reset token
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: resetToken.user_id },
+          data: { password_hash: hashedPassword },
+        }),
+        prisma.passwordResetToken.delete({
+          where: { id: resetToken.id },
+        }),
+        // Invalidate all existing sessions for security
+        prisma.session.deleteMany({
+          where: { user_id: resetToken.user_id },
+        }),
+      ]);
+
+      logger.info(`Password reset completed: ${resetToken.user.email}`, { 
+        userId: resetToken.user_id 
+      });
+    } catch (error) {
+      logger.error('Error resetting password:', error);
+      throw error;
+    }
+  }
+
+  // Verify email using token
+  static async verifyEmail(token: string): Promise<UserResponse> {
+    try {
+      // Find valid verification token
+      const verificationToken = await prisma.emailVerificationToken.findUnique({
+        where: { token },
+        include: { user: true },
+      });
+
+      if (!verificationToken) {
+        throw new Error('Invalid or expired verification token');
+      }
+
+      if (verificationToken.expires_at < new Date()) {
+        // Clean up expired token
+        await prisma.emailVerificationToken.delete({
+          where: { id: verificationToken.id },
+        });
+        throw new Error('Verification token expired');
+      }
+
+      // Update user email verification status and delete token
+      const [updatedUser] = await prisma.$transaction([
+        prisma.user.update({
+          where: { id: verificationToken.user_id },
+          data: { email_verified: true },
+        }),
+        prisma.emailVerificationToken.delete({
+          where: { id: verificationToken.id },
+        }),
+      ]);
+
+      logger.info(`Email verified: ${updatedUser.email}`, { 
+        userId: updatedUser.id 
+      });
+
+      return this.formatUserResponse(updatedUser);
+    } catch (error) {
+      logger.error('Error verifying email:', error);
+      throw error;
+    }
+  }
+
+  // Change password for authenticated user
+  static async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    try {
+      // Get user
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Verify current password
+      const isValidPassword = await this.verifyPassword(currentPassword, user.password_hash);
+      if (!isValidPassword) {
+        throw new Error('Current password is incorrect');
+      }
+
+      // Hash new password
+      const hashedPassword = await this.hashPassword(newPassword);
+
+      // Update password
+      await prisma.user.update({
+        where: { id: userId },
+        data: { password_hash: hashedPassword },
+      });
+
+      logger.info(`Password changed: ${user.email}`, { userId });
+    } catch (error) {
+      logger.error('Error changing password:', error);
+      throw error;
+    }
+  }
+
+  // Clean up expired tokens (maintenance function)
+  static async cleanupExpiredTokens(): Promise<void> {
+    try {
+      const now = new Date();
+      
+      await prisma.$transaction([
+        prisma.session.deleteMany({
+          where: { expires_at: { lt: now } },
+        }),
+        prisma.passwordResetToken.deleteMany({
+          where: { expires_at: { lt: now } },
+        }),
+        prisma.emailVerificationToken.deleteMany({
+          where: { expires_at: { lt: now } },
+        }),
+      ]);
+
+      logger.info('Expired tokens cleaned up');
+    } catch (error) {
+      logger.error('Error cleaning up expired tokens:', error);
+      throw error;
+    }
+  }
+}
