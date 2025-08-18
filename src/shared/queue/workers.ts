@@ -5,7 +5,7 @@ import { logger } from '@/shared/logger.js';
 
 // Redis connection for workers
 const connection = new IORedis(config.REDIS_URL, {
-  maxRetriesPerRequest: 3,
+  maxRetriesPerRequest: null,
 });
 
 // Email worker

@@ -6,6 +6,7 @@ import {
   RevenueCatWebhook,
   planLimits,
 } from './payment.schema.js';
+import { logger } from '@/shared/logger.js';
 
 export class PaymentService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -24,7 +25,7 @@ export class PaymentService {
         Buffer.from(signature, 'hex'),
         Buffer.from(expectedSignature, 'hex')
       );
-    } catch (error) {
+    } catch (_error) {
       return false;
     }
   }
@@ -69,14 +70,14 @@ export class PaymentService {
           break;
 
         case 'TEST':
-          console.log('Test webhook event received:', event);
+          logger.info('Test webhook event received:', event);
           break;
 
         default:
-          console.log('Unhandled webhook event type:', event.type);
+          logger.warn('Unhandled webhook event type:', event.type);
       }
     } catch (error) {
-      console.error('Error processing webhook event:', error);
+      logger.error('Error processing webhook event:', error);
       throw new Error(`Failed to process webhook event: ${event.type}`);
     }
   }

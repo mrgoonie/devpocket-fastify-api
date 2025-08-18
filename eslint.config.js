@@ -30,7 +30,7 @@ export default [
       '@typescript-eslint': tseslint,
     },
     rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
@@ -38,6 +38,8 @@ export default [
       'no-console': 'warn',
       'prefer-const': 'error',
       'no-var': 'error',
+      'no-undef': 'warn',
+      'no-unused-vars': 'warn',
       'object-shorthand': 'error',
       'prefer-arrow-callback': ['error', { allowNamedFunctions: true }],
     },

@@ -39,7 +39,7 @@ export class HealthService {
     const allHealthy = [database, redis, memory, disk].every(check => check.status === 'healthy');
 
     return {
-      status: allHealthy ? 'healthy' : 'unhealthy',
+      status: allHealthy ? 'ok' : 'unhealthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       checks: {

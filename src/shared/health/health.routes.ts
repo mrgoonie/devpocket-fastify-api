@@ -19,7 +19,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            status: { type: 'string', enum: ['healthy', 'unhealthy'] },
+            status: { type: 'string', enum: ['ok', 'unhealthy'] },
             timestamp: { type: 'string', format: 'date-time' },
             uptime: { type: 'number' },
             checks: {
@@ -28,7 +28,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
                 database: {
                   type: 'object',
                   properties: {
-                    status: { type: 'string', enum: ['healthy', 'unhealthy'] },
+                    status: { type: 'string', enum: ['ok', 'unhealthy'] },
                     responseTime: { type: 'number' },
                     message: { type: 'string' }
                   }
@@ -36,7 +36,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
                 redis: {
                   type: 'object',
                   properties: {
-                    status: { type: 'string', enum: ['healthy', 'unhealthy'] },
+                    status: { type: 'string', enum: ['ok', 'unhealthy'] },
                     responseTime: { type: 'number' },
                     message: { type: 'string' }
                   }
@@ -44,14 +44,14 @@ export async function healthRoutes(fastify: FastifyInstance) {
                 memory: {
                   type: 'object',
                   properties: {
-                    status: { type: 'string', enum: ['healthy', 'unhealthy'] },
+                    status: { type: 'string', enum: ['ok', 'unhealthy'] },
                     message: { type: 'string' }
                   }
                 },
                 disk: {
                   type: 'object',
                   properties: {
-                    status: { type: 'string', enum: ['healthy', 'unhealthy'] },
+                    status: { type: 'string', enum: ['ok', 'unhealthy'] },
                     message: { type: 'string' }
                   }
                 }

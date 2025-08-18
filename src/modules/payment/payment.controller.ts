@@ -4,7 +4,7 @@ import { RevenueCatWebhookSchema, planInfo, PlanType } from './payment.schema.js
 import { AuthenticatedRequest } from '../auth/auth.middleware.js';
 
 export class PaymentController {
-  constructor(private paymentService: PaymentService) {}
+  constructor(private readonly paymentService: PaymentService) {}
 
   /**
    * Handle RevenueCat webhook

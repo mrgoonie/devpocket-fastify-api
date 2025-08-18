@@ -18,11 +18,13 @@ export async function setupPlugins(fastify: FastifyInstance) {
     global: true,
   });
 
-  // Register rate limiting
-  await fastify.register(import('@fastify/rate-limit'), {
-    max: 100,
-    timeWindow: '1 minute',
-  });
+  // Register rate limiting (skip in test environment)
+  if (!config.isTest) {
+    await fastify.register(import('@fastify/rate-limit'), {
+      max: 100,
+      timeWindow: '1 minute',
+    });
+  }
 
   // Register JWT
   await fastify.register(import('@fastify/jwt'), {
