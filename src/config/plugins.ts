@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '@/config/environment.js';
 import prismaPlugin from '@/shared/database/plugin.js';
+import { authenticate } from '@/modules/auth/auth.middleware.js';
 
 export async function setupPlugins(fastify: FastifyInstance) {
   // Register Prisma plugin
@@ -33,6 +34,9 @@ export async function setupPlugins(fastify: FastifyInstance) {
 
   // Register WebSocket support
   await fastify.register(import('@fastify/websocket'));
+
+  // Add authentication method
+  fastify.decorate('authenticate', authenticate);
 
   // Register Swagger documentation
   await fastify.register(import('@fastify/swagger'), {

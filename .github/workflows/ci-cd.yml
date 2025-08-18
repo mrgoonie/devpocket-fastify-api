@@ -1,0 +1,206 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '8.10.5'
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: devpocket-fastify-api-test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: ${{ env.PNPM_VERSION }}
+
+    - name: Get pnpm store directory
+      shell: bash
+      run: |
+        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+    - name: Setup pnpm cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Generate Prisma client
+      run: pnpm db:generate
+
+    - name: Run linting
+      run: pnpm lint
+
+    - name: Run type checking
+      run: pnpm build
+
+    - name: Push database schema
+      run: pnpm db:push
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/devpocket-fastify-api-test?schema=public
+
+    - name: Run tests
+      run: pnpm test:coverage
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/devpocket-fastify-api-test?schema=public
+        REDIS_URL: redis://localhost:6379
+        JWT_SECRET: test-super-secret-jwt-key-for-testing-only-min-32-chars
+        JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
+        ENCRYPTION_KEY: test-encryption-key-for-ssh-keys-testing-min-32-chars
+        REVENUECAT_WEBHOOK_SECRET: test-webhook-secret-for-revenuecat-testing
+        RESEND_API_KEY: test-resend-api-key-for-testing-purposes
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage/lcov.info
+        flags: unittests
+        name: codecov-umbrella
+
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test, build]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+
+    - name: Deploy to Kubernetes
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl set image deployment/devpocket-api devpocket-api=ghcr.io/${{ github.repository }}:${{ github.sha }} -n production
+        kubectl rollout status deployment/devpocket-api -n production
+
+    - name: Verify deployment
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl get pods -n production -l app=devpocket-api
+        
+    - name: Run smoke tests
+      run: |
+        # Wait for deployment to be ready
+        sleep 30
+        
+        # Basic health check
+        curl -f https://api.devpocket.com/health || exit 1
+        
+        # API version check
+        curl -f https://api.devpocket.com/api/v1/test || exit 1
+
+  notify:
+    name: Notify Deployment
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: always()
+
+    steps:
+    - name: Notify Success
+      if: needs.deploy.result == 'success'
+      run: |
+        echo "🚀 Deployment successful!"
+        # Add your notification logic here (Slack, Discord, etc.)
+
+    - name: Notify Failure
+      if: needs.deploy.result == 'failure'
+      run: |
+        echo "❌ Deployment failed!"
+        # Add your notification logic here (Slack, Discord, etc.)

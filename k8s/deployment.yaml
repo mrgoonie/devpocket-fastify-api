@@ -1,0 +1,159 @@
+# DevPocket API Kubernetes Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devpocket-api
+  labels:
+    app: devpocket-api
+    version: v1.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: devpocket-api
+  template:
+    metadata:
+      labels:
+        app: devpocket-api
+        version: v1.0.0
+    spec:
+      containers:
+      - name: devpocket-api
+        image: devpocket/api:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: redis-url
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: jwt-secret
+        - name: JWT_REFRESH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: jwt-refresh-secret
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: encryption-key
+        - name: RESEND_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: resend-api-key
+        - name: REVENUECAT_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: revenuecat-webhook-secret
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: var-tmp
+          mountPath: /var/tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: var-tmp
+        emptyDir: {}
+      securityContext:
+        fsGroup: 1001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: devpocket-api
+      automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devpocket-api-service
+  labels:
+    app: devpocket-api
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: devpocket-api
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: devpocket-api
+automountServiceAccountToken: false
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: devpocket-api-ingress
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - api.devpocket.com
+    secretName: devpocket-api-tls
+  rules:
+  - host: api.devpocket.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: devpocket-api-service
+            port:
+              number: 80
