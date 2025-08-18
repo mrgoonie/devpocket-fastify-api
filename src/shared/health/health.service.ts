@@ -27,7 +27,7 @@ export class HealthService {
   ) {}
 
   async getHealthStatus(): Promise<HealthCheckResult> {
-    const startTime = Date.now();
+    // const startTime = Date.now(); // For future performance monitoring
     
     const [database, redis, memory, disk] = await Promise.all([
       this.checkDatabase(),

@@ -1,4 +1,6 @@
 // Terminal Module Exports
+// Some terminal modules temporarily have stub implementations for compilation
+// TODO: Fix WebSocket and Zod schema integration issues
 export { terminalRoutes } from './terminal.routes.js';
 export { terminalService } from './terminal.service.js';
 export { terminalController } from './terminal.controller.js';

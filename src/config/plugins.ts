@@ -74,28 +74,4 @@ export async function setupPlugins(fastify: FastifyInstance) {
     staticCSP: true,
     transformSpecificationClone: true,
   });
-
-  // Health check endpoint
-  fastify.get('/health', {
-    schema: {
-      tags: ['Health'],
-      summary: 'Health check endpoint',
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            status: { type: 'string' },
-            timestamp: { type: 'string' },
-            uptime: { type: 'number' },
-          },
-        },
-      },
-    },
-  }, async () => {
-    return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-    };
-  });
 }

@@ -12,6 +12,20 @@ declare module 'fastify' {
   }
 }
 
+// Exported type for authenticated requests
+export interface AuthenticatedRequest extends FastifyRequest {
+  authUser: {
+    userId: string;
+    sessionId: string;
+    email: string;
+  };
+  user: {
+    id: string;
+    email: string;
+    sessionId: string;
+  };
+}
+
 // Authentication middleware
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -69,6 +83,13 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
       userId: decoded.userId,
       sessionId: decoded.sessionId,
       email: decoded.email,
+    };
+
+    // Also set user property for compatibility
+    (request as any).user = {
+      id: decoded.userId,
+      email: decoded.email,
+      sessionId: decoded.sessionId,
     };
 
   } catch (error) {
@@ -129,6 +150,13 @@ export async function optionalAuthenticate(request: FastifyRequest) {
         userId: decoded.userId,
         sessionId: decoded.sessionId,
         email: decoded.email,
+      };
+
+      // Also set user property for compatibility
+      (request as any).user = {
+        id: decoded.userId,
+        email: decoded.email,
+        sessionId: decoded.sessionId,
       };
     }
   } catch (error) {

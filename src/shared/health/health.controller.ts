@@ -15,7 +15,7 @@ export class HealthController {
       
       reply.code(statusCode).send(healthStatus);
     } catch (error) {
-      request.log.error('Health check error:', error);
+      request.log.error({ error }, 'Health check error');
       
       reply.code(503).send({
         status: 'unhealthy',
@@ -42,7 +42,7 @@ export class HealthController {
         checks: readinessStatus.checks,
       });
     } catch (error) {
-      request.log.error('Readiness check error:', error);
+      request.log.error({ error }, 'Readiness check error');
       
       reply.code(503).send({
         ready: false,
@@ -67,7 +67,7 @@ export class HealthController {
         version: process.version,
       });
     } catch (error) {
-      request.log.error('Liveness check error:', error);
+      request.log.error({ error }, 'Liveness check error');
       
       reply.code(503).send({
         alive: false,
@@ -80,7 +80,7 @@ export class HealthController {
   /**
    * Simple health check for load balancers
    */
-  async getSimpleHealth(request: FastifyRequest, reply: FastifyReply) {
+  async getSimpleHealth(_request: FastifyRequest, reply: FastifyReply) {
     reply.send({ status: 'ok', timestamp: new Date().toISOString() });
   }
 }

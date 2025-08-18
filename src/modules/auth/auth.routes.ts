@@ -1,17 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { AuthController } from './auth.controller.js';
 import { authenticate, requireEmailVerification } from './auth.middleware.js';
-import { 
-  registerSchema, 
-  loginSchema, 
-  forgotPasswordSchema, 
-  resetPasswordSchema,
-  refreshTokenSchema,
-  changePasswordSchema,
-  userResponseSchema,
-  loginResponseSchema,
-  refreshResponseSchema,
-} from './auth.schema.js';
+// Schema imports removed - using inline JSON schemas for Fastify validation
+// TODO: Integrate with Zod schemas or use fastify-zod plugin
 
 export async function authRoutes(fastify: FastifyInstance) {
   // Rate limiting configuration for auth endpoints
@@ -34,7 +25,15 @@ export async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Register new user',
       description: 'Create a new user account with email and password',
-      body: registerSchema,
+      body: {
+        type: 'object',
+        properties: {
+          email: { type: 'string', format: 'email' },
+          username: { type: 'string', minLength: 3, maxLength: 20 },
+          password: { type: 'string', minLength: 8 }
+        },
+        required: ['email', 'username', 'password']
+      },
       response: {
         201: {
           type: 'object',
@@ -44,7 +43,17 @@ export async function authRoutes(fastify: FastifyInstance) {
             data: {
               type: 'object',
               properties: {
-                user: userResponseSchema,
+                user: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    email: { type: 'string' },
+                    username: { type: 'string' },
+                    email_verified: { type: 'boolean' },
+                    created_at: { type: 'string' },
+                    updated_at: { type: 'string' }
+                  }
+                },
               },
             },
           },
@@ -78,14 +87,40 @@ export async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Login user',
       description: 'Authenticate user and return access token',
-      body: loginSchema,
+      body: {
+        type: 'object',
+        properties: {
+          email: { type: 'string', format: 'email' },
+          password: { type: 'string', minLength: 1 },
+          device_id: { type: 'string' }
+        },
+        required: ['email', 'password']
+      },
       response: {
         200: {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
             message: { type: 'string' },
-            data: loginResponseSchema,
+            data: {
+              type: 'object',
+              properties: {
+                user: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    email: { type: 'string' },
+                    username: { type: 'string' },
+                    email_verified: { type: 'boolean' },
+                    created_at: { type: 'string' },
+                    updated_at: { type: 'string' }
+                  }
+                },
+                access_token: { type: 'string' },
+                refresh_token: { type: 'string' },
+                expires_in: { type: 'number' }
+              }
+            },
           },
         },
         401: {
@@ -145,14 +180,26 @@ export async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Refresh access token',
       description: 'Generate new access token using refresh token',
-      body: refreshTokenSchema,
+      body: {
+        type: 'object',
+        properties: {
+          refresh_token: { type: 'string', minLength: 1 }
+        },
+        required: ['refresh_token']
+      },
       response: {
         200: {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
             message: { type: 'string' },
-            data: refreshResponseSchema,
+            data: {
+              type: 'object',
+              properties: {
+                access_token: { type: 'string' },
+                expires_in: { type: 'number' }
+              }
+            },
           },
         },
         401: {
@@ -191,7 +238,17 @@ export async function authRoutes(fastify: FastifyInstance) {
             data: {
               type: 'object',
               properties: {
-                user: userResponseSchema,
+                user: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    email: { type: 'string' },
+                    username: { type: 'string' },
+                    email_verified: { type: 'boolean' },
+                    created_at: { type: 'string' },
+                    updated_at: { type: 'string' }
+                  }
+                },
               },
             },
           },
@@ -225,7 +282,13 @@ export async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Request password reset',
       description: 'Send password reset link to user email',
-      body: forgotPasswordSchema,
+      body: {
+        type: 'object',
+        properties: {
+          email: { type: 'string', format: 'email' }
+        },
+        required: ['email']
+      },
       response: {
         200: {
           type: 'object',
@@ -255,7 +318,14 @@ export async function authRoutes(fastify: FastifyInstance) {
       tags: ['Authentication'],
       summary: 'Reset password',
       description: 'Reset user password using reset token',
-      body: resetPasswordSchema,
+      body: {
+        type: 'object',
+        properties: {
+          token: { type: 'string', minLength: 1 },
+          password: { type: 'string', minLength: 8 }
+        },
+        required: ['token', 'password']
+      },
       response: {
         200: {
           type: 'object',
@@ -298,7 +368,17 @@ export async function authRoutes(fastify: FastifyInstance) {
             data: {
               type: 'object',
               properties: {
-                user: userResponseSchema,
+                user: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    email: { type: 'string' },
+                    username: { type: 'string' },
+                    email_verified: { type: 'boolean' },
+                    created_at: { type: 'string' },
+                    updated_at: { type: 'string' }
+                  }
+                },
               },
             },
           },
@@ -326,7 +406,14 @@ export async function authRoutes(fastify: FastifyInstance) {
       summary: 'Change password',
       description: 'Change password for authenticated user',
       security: [{ bearerAuth: [] }],
-      body: changePasswordSchema,
+      body: {
+        type: 'object',
+        properties: {
+          current_password: { type: 'string', minLength: 1 },
+          new_password: { type: 'string', minLength: 8 }
+        },
+        required: ['current_password', 'new_password']
+      },
       response: {
         200: {
           type: 'object',

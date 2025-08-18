@@ -89,23 +89,38 @@ export class PaymentService {
     const expiresAt = event.expiration_at_ms ? new Date(event.expiration_at_ms) : null;
 
     await this.prisma.$transaction(async (tx) => {
-      // Create or update subscription
-      await tx.subscription.upsert({
-        where: { user_id: userId },
-        create: {
+      // Find existing active subscription
+      const existingSubscription = await tx.subscription.findFirst({
+        where: { 
           user_id: userId,
-          plan_type: planType,
-          status: 'ACTIVE',
-          started_at: new Date(event.purchased_at_ms),
-          expires_at: expiresAt,
+          status: 'ACTIVE'
         },
-        update: {
-          plan_type: planType,
-          status: 'ACTIVE',
-          started_at: new Date(event.purchased_at_ms),
-          expires_at: expiresAt,
-        },
+        orderBy: { created_at: 'desc' }
       });
+
+      if (existingSubscription) {
+        // Update existing subscription
+        await tx.subscription.update({
+          where: { id: existingSubscription.id },
+          data: {
+            plan_type: planType,
+            status: 'ACTIVE',
+            started_at: new Date(event.purchased_at_ms),
+            expires_at: expiresAt,
+          },
+        });
+      } else {
+        // Create new subscription
+        await tx.subscription.create({
+          data: {
+            user_id: userId,
+            plan_type: planType,
+            status: 'ACTIVE',
+            started_at: new Date(event.purchased_at_ms),
+            expires_at: expiresAt,
+          },
+        });
+      }
 
       // Create payment history record
       if (event.price && event.currency) {
@@ -185,7 +200,7 @@ export class PaymentService {
   /**
    * Handle subscription cancellation
    */
-  private async handleCancellation(event: any, userId: string): Promise<void> {
+  private async handleCancellation(_event: any, userId: string): Promise<void> {
     await this.prisma.subscription.updateMany({
       where: { user_id: userId, status: 'ACTIVE' },
       data: {
@@ -198,7 +213,7 @@ export class PaymentService {
   /**
    * Handle subscription uncancellation
    */
-  private async handleUncancellation(event: any, userId: string): Promise<void> {
+  private async handleUncancellation(_event: any, userId: string): Promise<void> {
     await this.prisma.subscription.updateMany({
       where: { user_id: userId, status: 'CANCELLED' },
       data: {
@@ -211,7 +226,7 @@ export class PaymentService {
   /**
    * Handle subscription expiration
    */
-  private async handleExpiration(event: any, userId: string): Promise<void> {
+  private async handleExpiration(_event: any, userId: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       // Update subscription status
       await tx.subscription.updateMany({
@@ -230,7 +245,7 @@ export class PaymentService {
   /**
    * Handle billing issue
    */
-  private async handleBillingIssue(event: any, userId: string): Promise<void> {
+  private async handleBillingIssue(_event: any, userId: string): Promise<void> {
     await this.prisma.subscription.updateMany({
       where: { user_id: userId, status: 'ACTIVE' },
       data: {

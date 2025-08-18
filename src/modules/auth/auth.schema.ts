@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
 // User registration schema
 export const registerSchema = z.object({
@@ -84,3 +85,15 @@ export const refreshResponseSchema = z.object({
 export type UserResponse = z.infer<typeof userResponseSchema>;
 export type LoginResponse = z.infer<typeof loginResponseSchema>;
 export type RefreshResponse = z.infer<typeof refreshResponseSchema>;
+
+// JSON Schema exports for Fastify validation (must be after Zod schema definitions)
+export const registerJsonSchema = zodToJsonSchema(registerSchema, 'registerSchema');
+export const loginJsonSchema = zodToJsonSchema(loginSchema, 'loginSchema');
+export const forgotPasswordJsonSchema = zodToJsonSchema(forgotPasswordSchema, 'forgotPasswordSchema');
+export const resetPasswordJsonSchema = zodToJsonSchema(resetPasswordSchema, 'resetPasswordSchema');
+export const verifyEmailJsonSchema = zodToJsonSchema(verifyEmailSchema, 'verifyEmailSchema');
+export const refreshTokenJsonSchema = zodToJsonSchema(refreshTokenSchema, 'refreshTokenSchema');
+export const changePasswordJsonSchema = zodToJsonSchema(changePasswordSchema, 'changePasswordSchema');
+export const userResponseJsonSchema = zodToJsonSchema(userResponseSchema, 'userResponseSchema');
+export const loginResponseJsonSchema = zodToJsonSchema(loginResponseSchema, 'loginResponseSchema');
+export const refreshResponseJsonSchema = zodToJsonSchema(refreshResponseSchema, 'refreshResponseSchema');

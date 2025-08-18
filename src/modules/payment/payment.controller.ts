@@ -38,7 +38,7 @@ export class PaymentController {
 
       reply.code(200).send({ success: true });
     } catch (error) {
-      request.log.error('Webhook processing error:', error);
+      request.log.error({ error }, 'Webhook processing error');
       
       if (error instanceof Error) {
         return reply.code(400).send({ error: error.message });
@@ -62,7 +62,7 @@ export class PaymentController {
 
       reply.send({ subscription });
     } catch (error) {
-      request.log.error('Get subscription error:', error);
+      request.log.error({ error }, 'Get subscription error');
       reply.code(500).send({ error: 'Internal server error' });
     }
   }
@@ -79,7 +79,7 @@ export class PaymentController {
 
       reply.send({ plans });
     } catch (error) {
-      request.log.error('Get plans error:', error);
+      request.log.error({ error }, 'Get plans error');
       reply.code(500).send({ error: 'Internal server error' });
     }
   }
@@ -96,7 +96,7 @@ export class PaymentController {
 
       reply.send(result);
     } catch (error) {
-      request.log.error('Get payment history error:', error);
+      request.log.error({ error }, 'Get payment history error');
       reply.code(500).send({ error: 'Internal server error' });
     }
   }
@@ -112,7 +112,7 @@ export class PaymentController {
 
       reply.send({ message: 'Subscription cancelled successfully' });
     } catch (error) {
-      request.log.error('Cancel subscription error:', error);
+      request.log.error({ error }, 'Cancel subscription error');
       reply.code(500).send({ error: 'Internal server error' });
     }
   }
@@ -133,7 +133,7 @@ export class PaymentController {
 
       reply.send(result);
     } catch (error) {
-      request.log.error('Check usage limit error:', error);
+      request.log.error({ error }, 'Check usage limit error');
       reply.code(500).send({ error: 'Internal server error' });
     }
   }
@@ -152,7 +152,7 @@ export class PaymentController {
         subscription,
       });
     } catch (error) {
-      request.log.error('Get subscription status error:', error);
+      request.log.error({ error }, 'Get subscription status error');
       reply.code(500).send({ error: 'Internal server error' });
     }
   }
@@ -178,7 +178,7 @@ export class PaymentController {
         subscription 
       });
     } catch (error) {
-      request.log.error('Create free subscription error:', error);
+      request.log.error({ error }, 'Create free subscription error');
       reply.code(500).send({ error: 'Internal server error' });
     }
   }
@@ -186,7 +186,7 @@ export class PaymentController {
   /**
    * Health check endpoint for webhook
    */
-  async healthCheck(request: FastifyRequest, reply: FastifyReply) {
+  async healthCheck(_request: FastifyRequest, reply: FastifyReply) {
     reply.send({ 
       status: 'ok', 
       service: 'payment',

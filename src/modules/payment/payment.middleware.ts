@@ -24,7 +24,7 @@ export function checkSshUsageLimit(paymentService: PaymentService) {
       // Store usage check result in request for potential use later
       request.usageCheck = usageCheck;
     } catch (error) {
-      request.log.error('SSH usage check error:', error);
+      request.log.error({ error }, 'SSH usage check error');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   };
@@ -52,7 +52,7 @@ export function checkAiUsageLimit(paymentService: PaymentService) {
       // Store usage check result in request for potential use later
       request.usageCheck = usageCheck;
     } catch (error) {
-      request.log.error('AI usage check error:', error);
+      request.log.error({ error }, 'AI usage check error');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   };
@@ -67,7 +67,7 @@ export function incrementSshUsage(paymentService: PaymentService) {
       const userId = request.user.id;
       await paymentService.incrementUsage(userId, 'ssh');
     } catch (error) {
-      request.log.error('SSH usage increment error:', error);
+      request.log.error({ error }, 'SSH usage increment error');
       // Don't fail the request if usage increment fails, just log it
     }
   };
@@ -82,7 +82,7 @@ export function incrementAiUsage(paymentService: PaymentService) {
       const userId = request.user.id;
       await paymentService.incrementUsage(userId, 'ai');
     } catch (error) {
-      request.log.error('AI usage increment error:', error);
+      request.log.error({ error }, 'AI usage increment error');
       // Don't fail the request if usage increment fails, just log it
     }
   };
@@ -105,7 +105,7 @@ export function requireActiveSubscription(paymentService: PaymentService) {
         });
       }
     } catch (error) {
-      request.log.error('Subscription check error:', error);
+      request.log.error({ error }, 'Subscription check error');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   };
@@ -143,7 +143,7 @@ export function requirePlanType(paymentService: PaymentService, requiredPlan: 'P
         });
       }
     } catch (error) {
-      request.log.error('Plan type check error:', error);
+      request.log.error({ error }, 'Plan type check error');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   };
@@ -167,7 +167,7 @@ export function requireCloudHistory(paymentService: PaymentService) {
         });
       }
     } catch (error) {
-      request.log.error('Cloud history check error:', error);
+      request.log.error({ error }, 'Cloud history check error');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   };
@@ -191,7 +191,7 @@ export function requireMultiDevice(paymentService: PaymentService) {
         });
       }
     } catch (error) {
-      request.log.error('Multi-device check error:', error);
+      request.log.error({ error }, 'Multi-device check error');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   };

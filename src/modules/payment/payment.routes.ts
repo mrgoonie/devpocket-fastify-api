@@ -1,7 +1,7 @@
-import { FastifyInstance, FastifyPluginOptions } from 'fastify';
+import { FastifyInstance, FastifyPluginOptions, FastifyRequest, FastifyReply } from 'fastify';
 import { PaymentController } from './payment.controller.js';
 import { PaymentService } from './payment.service.js';
-import { authMiddleware } from '../auth/auth.middleware.js';
+import { authenticate, AuthenticatedRequest } from '../auth/auth.middleware.js';
 
 export async function paymentRoutes(
   fastify: FastifyInstance,
@@ -9,6 +9,13 @@ export async function paymentRoutes(
 ) {
   const paymentService = new PaymentService(fastify.prisma);
   const paymentController = new PaymentController(paymentService);
+
+  // Helper function to wrap authenticated route handlers
+  const wrapAuthenticatedHandler = (handler: (request: AuthenticatedRequest, reply: FastifyReply) => Promise<any>) => {
+    return async (request: FastifyRequest, reply: FastifyReply) => {
+      return handler(request as AuthenticatedRequest, reply);
+    };
+  };
 
   // Public webhook endpoint (no authentication required)
   fastify.post('/webhooks/revenuecat', {
@@ -79,7 +86,7 @@ export async function paymentRoutes(
   // Protected routes (require authentication)
   fastify.register(async (fastify) => {
     // Apply authentication middleware to all routes in this context
-    fastify.addHook('onRequest', authMiddleware);
+    fastify.addHook('onRequest', authenticate);
 
     // Get current subscription
     fastify.get('/subscriptions/current', {
@@ -130,7 +137,7 @@ export async function paymentRoutes(
           }
         }
       }
-    }, paymentController.getCurrentSubscription.bind(paymentController));
+    }, wrapAuthenticatedHandler(paymentController.getCurrentSubscription.bind(paymentController)));
 
     // Get subscription status
     fastify.get('/subscriptions/status', {
@@ -151,7 +158,7 @@ export async function paymentRoutes(
           }
         }
       }
-    }, paymentController.getSubscriptionStatus.bind(paymentController));
+    }, wrapAuthenticatedHandler(paymentController.getSubscriptionStatus.bind(paymentController)));
 
     // Get available plans
     fastify.get('/subscriptions/plans', {
@@ -242,7 +249,7 @@ export async function paymentRoutes(
           }
         }
       }
-    }, paymentController.getPaymentHistory.bind(paymentController));
+    }, wrapAuthenticatedHandler(paymentController.getPaymentHistory.bind(paymentController)));
 
     // Cancel subscription
     fastify.post('/subscriptions/cancel', {
@@ -259,7 +266,7 @@ export async function paymentRoutes(
           }
         }
       }
-    }, paymentController.cancelSubscription.bind(paymentController));
+    }, wrapAuthenticatedHandler(paymentController.cancelSubscription.bind(paymentController)));
 
     // Check usage limit for feature
     fastify.get('/subscriptions/usage/:feature', {
@@ -292,7 +299,7 @@ export async function paymentRoutes(
           }
         }
       }
-    }, paymentController.checkUsageLimit.bind(paymentController));
+    }, wrapAuthenticatedHandler(paymentController.checkUsageLimit.bind(paymentController)));
 
     // Create free subscription (for new users)
     fastify.post('/subscriptions/free', {
@@ -316,6 +323,6 @@ export async function paymentRoutes(
           }
         }
       }
-    }, paymentController.createFreeSubscription.bind(paymentController));
+    }, wrapAuthenticatedHandler(paymentController.createFreeSubscription.bind(paymentController)));
   });
 }
