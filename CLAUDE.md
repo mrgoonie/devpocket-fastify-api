@@ -90,10 +90,10 @@ Freemium tiers documented in `docs/devpocket-product-overview.md`:
 - Use docker compose for development environment
 
 ### Code Quality Guidelines
-- Don't be too harsh on code linting and formatting
+- Don't be too harsh on code linting
 - Prioritize functionality and readability over strict style enforcement
 - Use reasonable code quality standards that enhance developer productivity
-- Allow for minor style variations when they improve code clarity
+- Use try catch error handling
 
 ### Pre-commit/Push Rules
 - Run linting before commit
