@@ -1,0 +1,248 @@
+// DevPocket Database Schema
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ================================
+// Authentication Module
+// ================================
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  username  String   @unique
+  password_hash String
+  email_verified Boolean @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  sessions             Session[]
+  password_reset_tokens PasswordResetToken[]
+  email_verification_tokens EmailVerificationToken[]
+  ssh_profiles         SshProfile[]
+  terminal_sessions    TerminalSession[]
+  subscriptions        Subscription[]
+  payment_history      PaymentHistory[]
+  usage_limits         UsageLimits[]
+
+  @@map("users")
+}
+
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  token      String   @unique
+  device_id  String?
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  token      String   @unique
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  token      String   @unique
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("email_verification_tokens")
+}
+
+// ================================
+// SSH Terminal Module
+// ================================
+
+enum AuthType {
+  PASSWORD
+  SSH_KEY
+  SSH_KEY_WITH_PASSPHRASE
+}
+
+model SshProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  user_id   String   @db.Uuid
+  name      String
+  host      String
+  port      Int      @default(22)
+  username  String
+  auth_type AuthType
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  user            User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  ssh_keys        SshKey[]
+  terminal_sessions TerminalSession[]
+
+  @@unique([user_id, name])
+  @@map("ssh_profiles")
+}
+
+model SshKey {
+  id               String @id @default(uuid()) @db.Uuid
+  profile_id       String @db.Uuid
+  private_key_encrypted String // AES-256 encrypted
+  public_key       String
+  passphrase_encrypted String? // For SSH keys with passphrase
+  created_at       DateTime @default(now())
+
+  // Relations
+  profile SshProfile @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+
+  @@map("ssh_keys")
+}
+
+enum SessionStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+  ERROR
+}
+
+model TerminalSession {
+  id         String        @id @default(uuid()) @db.Uuid
+  user_id    String        @db.Uuid
+  profile_id String?       @db.Uuid
+  session_id String        @unique
+  status     SessionStatus @default(ACTIVE)
+  created_at DateTime      @default(now())
+  ended_at   DateTime?
+
+  // Relations
+  user         User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  profile      SshProfile?    @relation(fields: [profile_id], references: [id], onDelete: SetNull)
+  command_history CommandHistory[]
+
+  @@map("terminal_sessions")
+}
+
+model CommandHistory {
+  id         String   @id @default(uuid()) @db.Uuid
+  session_id String   @db.Uuid
+  command    String
+  output     String?
+  status     Int      @default(0)
+  created_at DateTime @default(now())
+
+  // Relations
+  session TerminalSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+
+  @@map("command_history")
+}
+
+// ================================
+// Payment Module
+// ================================
+
+enum PlanType {
+  FREE
+  PRO
+  TEAM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAYMENT_FAILED
+}
+
+model Subscription {
+  id         String             @id @default(uuid()) @db.Uuid
+  user_id    String             @db.Uuid
+  plan_type  PlanType
+  status     SubscriptionStatus
+  started_at DateTime
+  expires_at DateTime?
+  created_at DateTime           @default(now())
+  updated_at DateTime           @updatedAt
+
+  // Relations
+  user     User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  invoices Invoice[]
+
+  @@map("subscriptions")
+}
+
+model PaymentHistory {
+  id           String   @id @default(uuid()) @db.Uuid
+  user_id      String   @db.Uuid
+  amount       Decimal  @db.Decimal(10, 2)
+  currency     String   @default("USD")
+  provider_ref String   // RevenueCat transaction ID
+  status       String
+  created_at   DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("payment_history")
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Invoice {
+  id              String        @id @default(uuid()) @db.Uuid
+  subscription_id String        @db.Uuid
+  amount          Decimal       @db.Decimal(10, 2)
+  currency        String        @default("USD")
+  status          InvoiceStatus @default(PENDING)
+  due_date        DateTime
+  paid_at         DateTime?
+  created_at      DateTime      @default(now())
+
+  // Relations
+  subscription Subscription @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+}
+
+model UsageLimits {
+  id             String   @id @default(uuid()) @db.Uuid
+  user_id        String   @db.Uuid @unique
+  plan_type      PlanType
+  ssh_connections Int     @default(0)
+  ai_requests    Int      @default(0)
+  reset_date     DateTime
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("usage_limits")
+}

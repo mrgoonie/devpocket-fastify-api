@@ -1,0 +1,133 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, dev, 'dev/*' ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '8'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: devpocket_test
+          POSTGRES_PASSWORD: devpocket_test
+          POSTGRES_DB: devpocket-fastify-api-test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup environment
+        run: |
+          cp .env.test.example .env.test
+          echo "DATABASE_URL=postgresql://devpocket_test:devpocket_test@localhost:5432/devpocket-fastify-api-test?schema=public" >> .env.test
+          echo "REDIS_URL=redis://localhost:6379/1" >> .env.test
+
+      - name: Generate Prisma client
+        run: pnpm run db:generate
+
+      - name: Run database migrations
+        run: pnpm run db:push
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://devpocket_test:devpocket_test@localhost:5432/devpocket-fastify-api-test?schema=public
+
+      - name: Lint code
+        run: pnpm run lint
+
+      - name: Type check
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm run test:coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://devpocket_test:devpocket_test@localhost:5432/devpocket-fastify-api-test?schema=public
+          REDIS_URL: redis://localhost:6379/1
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/coverage-final.json
+          fail_ci_if_error: false
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm run build
+
+      - name: Create production artifact
+        run: |
+          tar -czf devpocket-api.tar.gz \
+            dist/ \
+            package.json \
+            pnpm-lock.yaml \
+            prisma/ \
+            .env.example
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: devpocket-api-build
+          path: devpocket-api.tar.gz
+          retention-days: 30
