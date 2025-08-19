@@ -2,20 +2,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { buildApp } from '@/app.js';
 import { cleanupTestData } from '@/tests/setup.js';
 import { prisma } from '@/shared/database/client.js';
+import { TEST_USERS } from '@/tests/helper.js';
 
 describe('Authentication Module', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
-  let testUser: ReturnType<typeof getTestUser>;
-
-  // Generate unique test data for each test run
-  const getTestUser = () => {
-    const uniqueId = Math.random().toString(36).substring(2, 8); // 6 chars
-    return {
-      email: `test-${Date.now()}-${uniqueId}@example.com`,
-      username: `user${uniqueId}`, // Keep under 20 chars
-      password: 'TestPassword123!',
-    };
-  };
+  const testUser = TEST_USERS.auth;
 
   beforeAll(async () => {
     app = await buildApp();

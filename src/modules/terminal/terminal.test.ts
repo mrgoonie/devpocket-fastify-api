@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
-import { build } from '../../tests/helper.js';
+import { build, createTestUserAndLogin, makeAuthenticatedRequest } from '../../tests/helper.js';
 import { cleanupTestData } from '../../tests/setup.js';
 import { prisma } from '../../shared/database/client.js';
 import { encryptionService } from '../../shared/encryption/encryption.service.js';
@@ -42,8 +42,7 @@ vi.mock('./pty.service.js', () => ({
 describe('Terminal Module Integration Tests', () => {
   let app: FastifyInstance;
   let authToken: string;
-  // let userId: string;
-  // let sshProfileId: string;
+  let testUser: any;
 
   beforeAll(async () => {
     app = await build();
@@ -64,37 +63,10 @@ describe('Terminal Module Integration Tests', () => {
     // Small delay to ensure database is ready
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Generate unique test user data
-    const uniqueId = Math.random().toString(36).substring(2, 8); // 6 chars
-    const uniqueTestUser = {
-      email: `terminal-${Date.now()}-${uniqueId}@example.com`,
-      username: `term${uniqueId}`, // Keep under 20 chars
-      password: 'TestPassword123!'
-    };
-
-    // Create test user
-    const registerResponse = await app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/register',
-      payload: uniqueTestUser
-    });
-
-    expect(registerResponse.statusCode).toBe(201);
-
-    // Login to get auth token
-    const loginResponse = await app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/login',
-      payload: {
-        email: uniqueTestUser.email,
-        password: uniqueTestUser.password
-      }
-    });
-
-    expect(loginResponse.statusCode).toBe(200);
-    const loginData = loginResponse.json();
-    authToken = loginData.data.access_token;
-    // userId = loginData.data.user.id;
+    // Create test user and get auth token using standardized helper
+    const authData = await createTestUserAndLogin(app, 'terminal');
+    testUser = authData.user;
+    authToken = authData.token;
   });
 
   afterEach(async () => {
@@ -505,7 +477,10 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
         payload: { session_type: 'local' }
       });
 
-      const sessionId = sessionResponse.json().data.id;
+      expect(sessionResponse.statusCode).toBe(201);
+      const sessionData = sessionResponse.json();
+      expect(sessionData.success).toBe(true);
+      const sessionId = sessionData.data.id;
 
       // Add some command history directly to database
       await prisma.commandHistory.createMany({
@@ -547,7 +522,10 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
         payload: { session_type: 'local' }
       });
 
-      const sessionId = sessionResponse.json().data.id;
+      expect(sessionResponse.statusCode).toBe(201);
+      const sessionData = sessionResponse.json();
+      expect(sessionData.success).toBe(true);
+      const sessionId = sessionData.data.id;
 
       // Add multiple commands to history
       const commands = Array.from({ length: 15 }, (_, i) => ({

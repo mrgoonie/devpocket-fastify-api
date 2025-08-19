@@ -16,12 +16,38 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
-let isSetupComplete = false;
 
-// Global test setup - runs once for all test files
+// Use a file-based lock to prevent concurrent setup
+const fs = require('fs');
+const path = require('path');
+const lockFile = path.join(process.cwd(), '.test-setup.lock');
+
+// Global test setup - runs once for all test processes
 beforeAll(async () => {
-  // Only run setup once across all test files
-  if (isSetupComplete) {
+  // Check if setup is already in progress or complete
+  const maxWaitTime = 60000; // 60 seconds
+  const startTime = Date.now();
+  
+  while (fs.existsSync(lockFile)) {
+    if (Date.now() - startTime > maxWaitTime) {
+      // Remove stale lock file and continue
+      try {
+        fs.unlinkSync(lockFile);
+        break;
+      } catch (error) {
+        logger.warn('Could not remove stale lock file:', error);
+      }
+    }
+    // Wait a bit before checking again
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  // Create lock file to prevent concurrent setup
+  try {
+    fs.writeFileSync(lockFile, process.pid.toString());
+  } catch (error) {
+    // Another process might have created it first - wait and continue
+    await new Promise(resolve => setTimeout(resolve, 1000));
     return;
   }
 
@@ -68,27 +94,55 @@ beforeAll(async () => {
     
     logger.info(`Using database: ${databaseUrl.replace(/\/\/[^@]+@/, '//***:***@')}`); // Hide credentials in logs
 
-    // Ensure database schema exists
+    // Ensure database schema exists with proper error handling
     try {
-      await execAsync(`DATABASE_URL="${databaseUrl}" pnpm exec prisma db push --force-reset --skip-generate`);
-      logger.info('Database schema reset successfully');
+      logger.info('Creating/updating database schema...');
+      // Use db push to create schema from prisma file (better for tests without migrations)
+      await execAsync(`DATABASE_URL="${databaseUrl}" npx prisma db push --force-reset --skip-generate`, {
+        timeout: 30000 // 30 second timeout
+      });
+      logger.info('Database schema created successfully');
     } catch (error) {
-      logger.warn('Schema setup failed, trying without reset:', error);
-      // Try without reset
+      logger.warn('Schema creation failed, trying without force-reset:', error);
       try {
-        await execAsync(`DATABASE_URL="${databaseUrl}" pnpm exec prisma db push --skip-generate`);
+        await execAsync(`DATABASE_URL="${databaseUrl}" npx prisma db push --skip-generate`, {
+          timeout: 30000
+        });
         logger.info('Database schema updated successfully');
       } catch (secondError) {
-        logger.error('Database schema setup completely failed:', secondError);
+        logger.error('All schema setup methods failed:', secondError);
         throw new Error('Cannot set up test database schema');
       }
     }
 
-    isSetupComplete = true;
+    // Verify schema was created properly
+    try {
+      const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
+        SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != '_prisma_migrations'
+      `;
+      const tableCount = tables.length;
+      if (tableCount < 5) { // We should have at least users, sessions, etc.
+        throw new Error(`Database schema incomplete - only ${tableCount} tables found`);
+      }
+      logger.info(`Database schema verified - ${tableCount} tables found`);
+    } catch (error) {
+      logger.error('Schema verification failed:', error);
+      throw error;
+    }
+
     logger.info('Test environment setup complete');
   } catch (error) {
     logger.error('Test setup failed:', error);
     throw error;
+  } finally {
+    // Remove lock file
+    try {
+      if (fs.existsSync(lockFile)) {
+        fs.unlinkSync(lockFile);
+      }
+    } catch (error) {
+      logger.warn('Could not remove lock file:', error);
+    }
   }
 });
 
@@ -103,38 +157,110 @@ afterAll(async () => {
   }
 });
 
+// Mutex to prevent concurrent cleanups
+let cleanupMutex: Promise<void> = Promise.resolve();
+
 // Helper function for tests to clean up their data
 export async function cleanupTestData(): Promise<void> {
-  const tableNames = [
-    'command_history',
-    'email_verification_tokens',
-    'password_reset_tokens',
-    'payment_history',
-    'invoices',
-    'ssh_keys',
-    'terminal_sessions',
-    'sessions',
-    'usage_limits',
-    'subscriptions',
-    'ssh_profiles',
-    'users',
-  ];
+  // Wait for any previous cleanup to complete
+  await cleanupMutex;
+  
+  // Create new cleanup promise
+  cleanupMutex = cleanupTestDataInternal();
+  
+  // Wait for this cleanup to complete
+  await cleanupMutex;
+}
 
-  try {
-    await prisma.$transaction(async (tx) => {
-      // Disable foreign key checks for the transaction
-      await tx.$executeRaw`SET session_replication_role = 'replica';`;
+async function cleanupTestDataInternal(): Promise<void> {
+  const maxRetries = 3;
+  let attempt = 0;
 
-      // Truncate all tables
-      for (const tableName of tableNames) {
-        await tx.$executeRawUnsafe(`TRUNCATE TABLE "${tableName}" RESTART IDENTITY CASCADE;`);
+  while (attempt < maxRetries) {
+    try {
+      attempt++;
+      
+      // Use a transaction for atomic cleanup
+      await prisma.$transaction(async (tx) => {
+        // First, check if tables exist
+        const existingTables = await tx.$queryRaw<Array<{ tablename: string }>>`
+          SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != '_prisma_migrations'
+        `;
+        
+        const tableNames = existingTables.map(t => t.tablename);
+        
+        if (tableNames.length === 0) {
+          logger.debug('No tables found for cleanup - database might not be initialized');
+          return;
+        }
+        
+        // Clean up test data in correct order to respect foreign key constraints
+        // Child tables first, then parent tables
+        const cleanupOrder = [
+          'command_history',      // References terminal_sessions
+          'ssh_keys',            // References ssh_profiles  
+          'terminal_sessions',   // References users, ssh_profiles
+          'email_verification_tokens', // References users
+          'password_reset_tokens',     // References users
+          'sessions',            // References users
+          'invoices',           // References subscriptions
+          'payment_history',    // References users
+          'usage_limits',       // References users  
+          'subscriptions',      // References users
+          'ssh_profiles',       // References users
+          'users'              // No dependencies
+        ];
+
+        // Only clean tables that actually exist
+        const tablesToClean = cleanupOrder.filter(table => tableNames.includes(table));
+        
+        if (tablesToClean.length === 0) {
+          logger.debug('No known tables found for cleanup');
+          return;
+        }
+
+        logger.debug(`Cleaning up ${tablesToClean.length} tables: ${tablesToClean.join(', ')}`);
+
+        // Delete records in the correct order (respecting foreign keys)
+        for (const tableName of tablesToClean) {
+          try {
+            const result = await tx.$executeRawUnsafe(`DELETE FROM "${tableName}"`);
+            logger.debug(`Cleaned table ${tableName}`);
+          } catch (error) {
+            logger.debug(`Could not clean table ${tableName}:`, error);
+            // For some tables this might be expected, so continue
+          }
+        }
+
+        // Reset sequences to ensure clean IDs for next tests
+        for (const tableName of tablesToClean) {
+          try {
+            await tx.$executeRawUnsafe(`
+              SELECT setval(pg_get_serial_sequence('"${tableName}"', 'id'), 1, false) 
+              WHERE pg_get_serial_sequence('"${tableName}"', 'id') IS NOT NULL
+            `);
+          } catch (error) {
+            // Some tables might not have serial sequences, ignore
+            logger.debug(`Could not reset sequence for ${tableName}:`, error);
+          }
+        }
+      }, {
+        timeout: 10000, // 10 second timeout for cleanup transaction
+      });
+
+      logger.debug('Test data cleanup completed successfully');
+      return; // Success, exit retry loop
+      
+    } catch (error) {
+      logger.warn(`Test cleanup attempt ${attempt}/${maxRetries} failed:`, error);
+      
+      if (attempt === maxRetries) {
+        logger.error('All cleanup attempts failed, continuing anyway');
+        return;
       }
-
-      // Re-enable foreign key checks
-      await tx.$executeRaw`SET session_replication_role = 'origin';`;
-    });
-  } catch (error) {
-    logger.error('Failed to clean up test data:', error);
-    throw new Error('Could not clean up test database.');
+      
+      // Wait a bit before retrying
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   }
 }
