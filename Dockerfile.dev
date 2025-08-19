@@ -1,7 +1,7 @@
-FROM node:20-alpine
+FROM node:20-alpine3.17
 
-# Install build tools and Python for node-gyp
-RUN apk add --no-cache python3 make g++ py3-distutils
+# Install build tools and Python for node-gyp, plus OpenSSL for Prisma
+RUN apk add --no-cache python3 py3-setuptools make g++ openssl-dev
 
 # Install pnpm
 RUN npm install -g pnpm

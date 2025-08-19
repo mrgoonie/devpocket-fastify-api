@@ -1,5 +1,5 @@
 # Production Dockerfile for DevPocket Fastify API
-FROM node:20-alpine AS base
+FROM node:20-alpine3.17 AS base
 
 # Install pnpm
 RUN npm install -g pnpm@8.10.5
@@ -15,6 +15,9 @@ COPY package.json pnpm-lock.yaml ./
 
 # Dependencies stage
 FROM base AS dependencies
+
+# Install build tools and Python for node-gyp, plus OpenSSL for Prisma
+RUN apk add --no-cache python3 py3-setuptools make g++ openssl-dev
 
 # Install all dependencies (including dev dependencies for build)
 RUN pnpm install --frozen-lockfile
