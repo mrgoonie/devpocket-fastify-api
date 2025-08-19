@@ -114,6 +114,7 @@ config.local.yaml
 docker-compose.override.yml
 k8s/kube_config_ovh.yaml
 k8s/**/secrets.yaml
+test-ssh-key
 
 # Temporary files
 *.tmp

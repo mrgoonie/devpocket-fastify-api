@@ -13,6 +13,16 @@ interface ApiResponse<T> {
   error?: string;
 }
 
+interface WebSocketMessage {
+  type: string;
+  payload?: {
+    session_id?: string;
+    error?: string;
+    output?: string;
+    data?: string;
+  };
+}
+
 interface SshProfileData {
   id: string;
   name: string;
@@ -105,7 +115,7 @@ async function createAuthenticatedWebSocket(
 /**
  * Helper function to wait for WebSocket message
  */
-function waitForMessage(ws: WebSocket, timeout: number = 5000): Promise<unknown> {
+function waitForMessage(ws: WebSocket, timeout: number = 5000): Promise<WebSocketMessage> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error('Message timeout'));
@@ -114,10 +124,10 @@ function waitForMessage(ws: WebSocket, timeout: number = 5000): Promise<unknown>
     ws.once('message', (data: WebSocket.Data) => {
       clearTimeout(timer);
       try {
-        const message = JSON.parse(data.toString());
+        const message = JSON.parse(data.toString()) as WebSocketMessage;
         resolve(message);
-      } catch (error) {
-        resolve(data.toString());
+      } catch (_error) {
+        resolve({ type: 'raw', payload: { data: data.toString() } });
       }
     });
   });
@@ -126,7 +136,6 @@ function waitForMessage(ws: WebSocket, timeout: number = 5000): Promise<unknown>
 describe('SSH WebSocket Terminal Tests', () => {
   let app: FastifyInstance;
   let authToken: string;
-  let _userId: string;
 
   beforeAll(async () => {
     app = await buildApp();
@@ -141,7 +150,6 @@ describe('SSH WebSocket Terminal Tests', () => {
     await cleanupTestData();
     const authData = await createTestUserAndLogin(app);
     authToken = authData.token;
-    _userId = authData.user.id;
   });
 
   afterEach(async () => {
@@ -226,11 +234,12 @@ describe('SSH WebSocket Terminal Tests', () => {
         // Wait for connection response
         const response = await waitForMessage(ws, 15000);
         expect(response.type).toBe('connected');
-        expect(response.payload.session_id).toBeDefined();
+        expect(response.payload?.session_id).toBeDefined();
 
         ws.close();
-      } catch (error) {
+      } catch (_error) {
         // If WebSocket is not implemented yet, this is expected
+        // eslint-disable-next-line no-console
         console.log('WebSocket SSH connection test skipped - implementation pending');
       }
     }, 30000);
@@ -278,7 +287,7 @@ describe('SSH WebSocket Terminal Tests', () => {
 
         const commandResponse = await waitForMessage(ws, 10000);
         expect(commandResponse.type).toBe('output');
-        expect(commandResponse.payload.output).toContain(SSH_TEST_CONFIG.pwd.username);
+        expect(commandResponse.payload?.output).toContain(SSH_TEST_CONFIG.pwd.username);
 
         // Execute another command
         ws.send(JSON.stringify({
@@ -290,11 +299,12 @@ describe('SSH WebSocket Terminal Tests', () => {
 
         const pwdResponse = await waitForMessage(ws, 10000);
         expect(pwdResponse.type).toBe('output');
-        expect(pwdResponse.payload.output).toContain('/');
+        expect(pwdResponse.payload?.output).toContain('/');
 
         ws.close();
-      } catch (error) {
+      } catch (_error) {
         // If WebSocket is not implemented yet, this is expected
+        // eslint-disable-next-line no-console
         console.log('WebSocket SSH command test skipped - implementation pending');
       }
     }, 45000);
@@ -336,11 +346,12 @@ describe('SSH WebSocket Terminal Tests', () => {
         // Wait for connection response
         const response = await waitForMessage(ws, 15000);
         expect(response.type).toBe('connected');
-        expect(response.payload.session_id).toBeDefined();
+        expect(response.payload?.session_id).toBeDefined();
 
         ws.close();
-      } catch (error) {
+      } catch (_error) {
         // If WebSocket is not implemented yet, this is expected
+        // eslint-disable-next-line no-console
         console.log('WebSocket SSH key connection test skipped - implementation pending');
       }
     }, 30000);
@@ -380,11 +391,12 @@ describe('SSH WebSocket Terminal Tests', () => {
         // Should receive error response
         const response = await waitForMessage(ws, 15000);
         expect(response.type).toBe('error');
-        expect(response.payload.error).toContain('authentication');
+        expect(response.payload?.error).toContain('authentication');
 
         ws.close();
-      } catch (error) {
+      } catch (_error) {
         // If WebSocket is not implemented yet, this is expected
+        // eslint-disable-next-line no-console
         console.log('WebSocket error handling test skipped - implementation pending');
       }
     }, 20000);
@@ -422,11 +434,12 @@ describe('SSH WebSocket Terminal Tests', () => {
         // Should receive timeout error
         const response = await waitForMessage(ws, 35000);
         expect(response.type).toBe('error');
-        expect(response.payload.error).toMatch(/(timeout|unreachable)/i);
+        expect(response.payload?.error).toMatch(/(timeout|unreachable)/i);
 
         ws.close();
-      } catch (error) {
+      } catch (_error) {
         // If WebSocket is not implemented yet, this is expected
+        // eslint-disable-next-line no-console
         console.log('WebSocket timeout test skipped - implementation pending');
       }
     }, 40000);
@@ -481,7 +494,7 @@ describe('SSH WebSocket Terminal Tests', () => {
         // Should receive shell output
         const outputResponse = await waitForMessage(ws, 10000);
         expect(outputResponse.type).toBe('output');
-        expect(outputResponse.payload.data).toContain('Hello DevPocket');
+        expect(outputResponse.payload?.data).toContain('Hello DevPocket');
 
         // Send another command
         ws.send(JSON.stringify({
@@ -493,11 +506,12 @@ describe('SSH WebSocket Terminal Tests', () => {
 
         const lsResponse = await waitForMessage(ws, 10000);
         expect(lsResponse.type).toBe('output');
-        expect(lsResponse.payload.data).toContain('total');
+        expect(lsResponse.payload?.data).toContain('total');
 
         ws.close();
-      } catch (error) {
+      } catch (_error) {
         // If WebSocket is not implemented yet, this is expected
+        // eslint-disable-next-line no-console
         console.log('WebSocket interactive shell test skipped - implementation pending');
       }
     }, 60000);
@@ -545,8 +559,9 @@ describe('SSH WebSocket Terminal Tests', () => {
         expect(disconnectResponse.type).toBe('disconnected');
 
         ws.close();
-      } catch (error) {
+      } catch (_error) {
         // If WebSocket is not implemented yet, this is expected
+        // eslint-disable-next-line no-console
         console.log('WebSocket termination test skipped - implementation pending');
       }
     }, 30000);
