@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
 
 export interface HealthCheckResult {
-  status: 'healthy' | 'unhealthy';
+  status: 'ok' | 'unhealthy';
   timestamp: string;
   uptime: number;
   checks: {
@@ -14,7 +14,7 @@ export interface HealthCheckResult {
 }
 
 export interface HealthCheck {
-  status: 'healthy' | 'unhealthy';
+  status: 'ok' | 'unhealthy';
   responseTime?: number;
   message?: string;
   details?: Record<string, unknown>;
@@ -36,10 +36,10 @@ export class HealthService {
       this.checkDisk(),
     ]);
 
-    const allHealthy = [database, redis, memory, disk].every(check => check.status === 'healthy');
+    const allHealthy = [database, redis, memory, disk].every(check => check.status === 'ok');
 
     return {
-      status: allHealthy ? 'healthy' : 'unhealthy',
+      status: allHealthy ? 'ok' : 'unhealthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       checks: {
@@ -58,7 +58,7 @@ export class HealthService {
       const responseTime = Date.now() - startTime;
 
       return {
-        status: 'healthy',
+        status: 'ok',
         responseTime,
         message: 'Database connection successful',
       };
@@ -80,7 +80,7 @@ export class HealthService {
       const responseTime = Date.now() - startTime;
 
       return {
-        status: 'healthy',
+        status: 'ok',
         responseTime,
         message: 'Redis connection successful',
       };
@@ -106,7 +106,7 @@ export class HealthService {
       const isHealthy = memoryUsagePercent < 90; // Alert if memory usage > 90%
 
       return {
-        status: isHealthy ? 'healthy' : 'unhealthy',
+        status: isHealthy ? 'ok' : 'unhealthy',
         message: isHealthy ? 'Memory usage is normal' : 'High memory usage detected',
         details: {
           totalMemory,
@@ -132,7 +132,7 @@ export class HealthService {
       const stats = await import('fs/promises').then(fs => fs.stat('.'));
       
       return {
-        status: 'healthy',
+        status: 'ok',
         message: 'Disk access successful',
         details: {
           lastModified: stats.mtime,
@@ -155,7 +155,7 @@ export class HealthService {
       this.checkRedis(),
     ]);
 
-    const ready = database.status === 'healthy' && redis.status === 'healthy';
+    const ready = database.status === 'ok' && redis.status === 'ok';
 
     return {
       ready,

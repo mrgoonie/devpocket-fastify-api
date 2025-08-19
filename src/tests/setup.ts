@@ -39,10 +39,17 @@ beforeAll(async () => {
     // Ensure database schema exists
     try {
       await execAsync('DATABASE_URL="postgresql://postgres:postgresql@localhost:5432/devpocket_test?schema=public" npx prisma db push --force-reset --skip-generate');
+      logger.info('Database schema reset successfully');
     } catch (error) {
       logger.warn('Schema setup failed:', error);
       // Try without reset
-      await execAsync('DATABASE_URL="postgresql://postgres:postgresql@localhost:5432/devpocket_test?schema=public" npx prisma db push --skip-generate');
+      try {
+        await execAsync('DATABASE_URL="postgresql://postgres:postgresql@localhost:5432/devpocket_test?schema=public" npx prisma db push --skip-generate');
+        logger.info('Database schema updated successfully');
+      } catch (secondError) {
+        logger.error('Database schema setup completely failed:', secondError);
+        throw new Error('Cannot set up test database schema');
+      }
     }
 
     isSetupComplete = true;
@@ -67,19 +74,60 @@ afterAll(async () => {
 // Helper function for tests to clean up their data
 export async function cleanupTestData(): Promise<void> {
   try {
-    // Clean up test data (but keep schema)
-    const tableNames = await prisma.$queryRaw<Array<{ tablename: string }>>`
-      SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+    // First, check if tables exist
+    const existingTables = await prisma.$queryRaw<Array<{ tablename: string }>>`
+      SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != '_prisma_migrations'
     `;
     
-    for (const { tablename } of tableNames) {
-      if (tablename !== '_prisma_migrations') {
-        await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" CASCADE;`);
+    const tableNames = existingTables.map(t => t.tablename);
+    
+    if (tableNames.length === 0) {
+      logger.debug('No tables found for cleanup - database might not be initialized');
+      return;
+    }
+    
+    // Clean up test data in order to respect foreign key constraints
+    // This order ensures child tables are cleaned before parent tables
+    const cleanupOrder = [
+      'command_history',
+      'email_verification_tokens', 
+      'password_reset_tokens',
+      'payment_history',
+      'invoices',
+      'ssh_keys',
+      'terminal_sessions',
+      'sessions',
+      'usage_limits',
+      'subscriptions',
+      'ssh_profiles',
+      'users'
+    ];
+
+    // Only clean tables that actually exist
+    const tablesToClean = cleanupOrder.filter(table => tableNames.includes(table));
+    
+    if (tablesToClean.length === 0) {
+      logger.debug('No known tables found for cleanup');
+      return;
+    }
+
+    // Disable foreign key checks temporarily for faster cleanup
+    await prisma.$executeRaw`SET session_replication_role = replica;`;
+    
+    for (const tableName of tablesToClean) {
+      try {
+        await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${tableName}" RESTART IDENTITY CASCADE;`);
+      } catch (error) {
+        // Log but continue - table might have been dropped
+        logger.debug(`Could not truncate table ${tableName}:`, error);
       }
     }
+    
+    // Re-enable foreign key checks
+    await prisma.$executeRaw`SET session_replication_role = DEFAULT;`;
+    
   } catch (error) {
     logger.warn('Test cleanup failed:', error);
-    // If cleanup fails, the test data might still be in an inconsistent state
-    // but we shouldn't fail the test
+    // If all cleanup fails, just continue - tests will handle missing data
   }
 }

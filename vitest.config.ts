@@ -10,6 +10,8 @@ export default defineConfig({
     exclude: ['node_modules', 'dist'],
     fileParallelism: false, // Run test files sequentially to avoid DB conflicts
     maxConcurrency: 1, // Only one test at a time
+    isolate: false, // Don't isolate processes - causes DB schema conflicts
+    pool: 'threads', // Use threads instead of forks
     env: {
       NODE_ENV: 'test',
       DATABASE_URL: 'postgresql://postgres:postgresql@localhost:5432/devpocket_test?schema=public',

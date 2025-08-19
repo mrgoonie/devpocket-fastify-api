@@ -19,6 +19,9 @@ describe('Authentication Module', () => {
   beforeEach(async () => {
     // Clean up test data before each test
     await cleanupTestData();
+    
+    // Small delay to ensure database is ready
+    await new Promise(resolve => setTimeout(resolve, 100));
   });
 
   afterAll(async () => {

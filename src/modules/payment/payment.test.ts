@@ -1,20 +1,34 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import { createTestApp } from '../../tests/helper.js';
-import { PrismaClient } from '@prisma/client';
+import { cleanupTestData } from '../../tests/setup.js';
+import { PrismaClient, User } from '@prisma/client';
+import { PlanInfo } from './payment.schema.js';
 import crypto from 'crypto';
 
 describe('Payment Module', () => {
   let app: FastifyInstance;
   let prisma: PrismaClient;
-  let testUser: any;
+  let testUser: User;
   let authToken: string;
 
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.prisma;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(async () => {
+    // Clean up all test data for proper isolation
+    await cleanupTestData();
     
-    // Create test user and get auth token
+    // Small delay to ensure database is ready
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Recreate test user and get fresh auth token
     await app.inject({
       method: 'POST',
       url: '/api/v1/auth/register',
@@ -39,17 +53,6 @@ describe('Payment Module', () => {
     testUser = loginData.data?.user;
   });
 
-  afterAll(async () => {
-    await app.close();
-  });
-
-  beforeEach(async () => {
-    // Clean up subscription data for each test
-    await prisma.usageLimits.deleteMany({ where: { user_id: testUser.id } });
-    await prisma.paymentHistory.deleteMany({ where: { user_id: testUser.id } });
-    await prisma.subscription.deleteMany({ where: { user_id: testUser.id } });
-  });
-
   describe('Subscription Plans', () => {
     it('should get available subscription plans', async () => {
       const response = await app.inject({
@@ -66,13 +69,13 @@ describe('Payment Module', () => {
       expect(data.plans).toBeDefined();
       expect(data.plans).toHaveLength(3);
       
-      const planTypes = data.plans.map((p: any) => p.type);
+      const planTypes = data.plans.map((p: PlanInfo) => p.type);
       expect(planTypes).toContain('FREE');
       expect(planTypes).toContain('PRO');
       expect(planTypes).toContain('TEAM');
 
       // Check FREE plan structure
-      const freePlan = data.plans.find((p: any) => p.type === 'FREE');
+      const freePlan = data.plans.find((p: PlanInfo) => p.type === 'FREE');
       expect(freePlan).toBeDefined();
       expect(freePlan.price).toBe(0);
       expect(freePlan.limits.sshConnections).toBe(1);

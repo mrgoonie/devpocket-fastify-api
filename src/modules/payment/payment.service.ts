@@ -1,4 +1,4 @@
-import { PrismaClient, PlanType } from '@prisma/client';
+import { PrismaClient, PlanType, Subscription } from '@prisma/client';
 import crypto from 'crypto';
 import {
   CurrentSubscription,
@@ -7,6 +7,12 @@ import {
   planLimits,
 } from './payment.schema.js';
 import { logger } from '@/shared/logger.js';
+
+// Type for individual RevenueCat event (extracted from webhook)
+type RevenueCatEvent = RevenueCatWebhook['event'];
+
+// Type for Prisma transaction
+type PrismaTransaction = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
 
 export class PaymentService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -85,7 +91,7 @@ export class PaymentService {
   /**
    * Handle initial purchase
    */
-  private async handlePurchase(event: any, userId: string): Promise<void> {
+  private async handlePurchase(event: RevenueCatEvent, userId: string): Promise<void> {
     const planType = this.mapProductIdToPlan(event.product_id);
     const expiresAt = event.expiration_at_ms ? new Date(event.expiration_at_ms) : null;
 
@@ -144,7 +150,7 @@ export class PaymentService {
   /**
    * Handle subscription renewal
    */
-  private async handleRenewal(event: any, userId: string): Promise<void> {
+  private async handleRenewal(event: RevenueCatEvent, userId: string): Promise<void> {
     const expiresAt = event.expiration_at_ms ? new Date(event.expiration_at_ms) : null;
 
     await this.prisma.$transaction(async (tx) => {
@@ -178,7 +184,7 @@ export class PaymentService {
   /**
    * Handle plan change (upgrade/downgrade)
    */
-  private async handlePlanChange(event: any, userId: string): Promise<void> {
+  private async handlePlanChange(event: RevenueCatEvent, userId: string): Promise<void> {
     const newPlanType = this.mapProductIdToPlan(event.product_id);
     const expiresAt = event.expiration_at_ms ? new Date(event.expiration_at_ms) : null;
 
@@ -201,7 +207,7 @@ export class PaymentService {
   /**
    * Handle subscription cancellation
    */
-  private async handleCancellation(_event: any, userId: string): Promise<void> {
+  private async handleCancellation(_event: RevenueCatEvent, userId: string): Promise<void> {
     await this.prisma.subscription.updateMany({
       where: { user_id: userId, status: 'ACTIVE' },
       data: {
@@ -214,7 +220,7 @@ export class PaymentService {
   /**
    * Handle subscription uncancellation
    */
-  private async handleUncancellation(_event: any, userId: string): Promise<void> {
+  private async handleUncancellation(_event: RevenueCatEvent, userId: string): Promise<void> {
     await this.prisma.subscription.updateMany({
       where: { user_id: userId, status: 'CANCELLED' },
       data: {
@@ -227,7 +233,7 @@ export class PaymentService {
   /**
    * Handle subscription expiration
    */
-  private async handleExpiration(_event: any, userId: string): Promise<void> {
+  private async handleExpiration(_event: RevenueCatEvent, userId: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       // Update subscription status
       await tx.subscription.updateMany({
@@ -246,7 +252,7 @@ export class PaymentService {
   /**
    * Handle billing issue
    */
-  private async handleBillingIssue(_event: any, userId: string): Promise<void> {
+  private async handleBillingIssue(_event: RevenueCatEvent, userId: string): Promise<void> {
     await this.prisma.subscription.updateMany({
       where: { user_id: userId, status: 'ACTIVE' },
       data: {
@@ -302,7 +308,7 @@ export class PaymentService {
   /**
    * Format subscription with usage data
    */
-  private async formatCurrentSubscription(subscription: any, userId: string): Promise<CurrentSubscription> {
+  private async formatCurrentSubscription(subscription: Subscription, userId: string): Promise<CurrentSubscription> {
     const usageLimits = await this.prisma.usageLimits.findUnique({
       where: { user_id: userId },
     });
@@ -424,7 +430,7 @@ export class PaymentService {
   /**
    * Update user usage limits based on plan
    */
-  private async updateUserUsageLimits(tx: any, userId: string, planType: PlanType): Promise<void> {
+  private async updateUserUsageLimits(tx: PrismaTransaction, userId: string, planType: PlanType): Promise<void> {
     const resetDate = new Date();
     resetDate.setMonth(resetDate.getMonth() + 1); // Reset monthly
 
@@ -447,7 +453,7 @@ export class PaymentService {
   /**
    * Reset user usage limits for new billing period
    */
-  private async resetUserUsageLimits(tx: any, userId: string): Promise<void> {
+  private async resetUserUsageLimits(tx: PrismaTransaction, userId: string): Promise<void> {
     const resetDate = new Date();
     resetDate.setMonth(resetDate.getMonth() + 1);
 

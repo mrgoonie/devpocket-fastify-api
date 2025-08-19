@@ -5,8 +5,39 @@ import { cleanupTestData } from '../../tests/setup.js';
 import { prisma } from '../../shared/database/client.js';
 import { encryptionService } from '../../shared/encryption/encryption.service.js';
 import { AuthType, SessionStatus } from '@prisma/client';
-import { sshConnectionManager } from './ssh.service.js';
-import { ptyManager } from './pty.service.js';
+
+// Mock SSH2 module to prevent native module crashes during tests
+vi.mock('ssh2', () => ({
+  Client: vi.fn().mockImplementation(() => ({
+    connect: vi.fn(),
+    end: vi.fn(),
+    on: vi.fn(),
+    exec: vi.fn(),
+    shell: vi.fn()
+  }))
+}));
+
+// Mock SSH and PTY services to avoid native module imports
+const mockSshConnectionManager = {
+  destroy: vi.fn().mockResolvedValue(undefined),
+  testConnection: vi.fn(),
+  createConnection: vi.fn(),
+  closeConnection: vi.fn(),
+  getConnectionStats: vi.fn().mockReturnValue({ total: 0, active: 0 })
+};
+
+const mockPtyManager = {
+  destroy: vi.fn(),
+  getSessionStats: vi.fn().mockReturnValue({ total: 0, active: 0 })
+};
+
+vi.mock('./ssh.service.js', () => ({
+  sshConnectionManager: mockSshConnectionManager
+}));
+
+vi.mock('./pty.service.js', () => ({
+  ptyManager: mockPtyManager
+}));
 
 describe('Terminal Module Integration Tests', () => {
   let app: FastifyInstance;
@@ -20,14 +51,18 @@ describe('Terminal Module Integration Tests', () => {
   });
 
   afterAll(async () => {
-    await sshConnectionManager.destroy();
-    await ptyManager.destroy();
+    // Cleanup mocked services
+    await mockSshConnectionManager.destroy();
+    await mockPtyManager.destroy();
     await app.close();
   });
 
   beforeEach(async () => {
     // Clean up test data
     await cleanupTestData();
+    
+    // Small delay to ensure database is ready
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     // Create test user
     const registerResponse = await app.inject({
@@ -59,8 +94,14 @@ describe('Terminal Module Integration Tests', () => {
   });
 
   afterEach(async () => {
+    // Reset mocks after each test
+    vi.clearAllMocks();
+    
     // Clean up test data after each test
     await cleanupTestData();
+    
+    // Small delay to ensure cleanup is complete
+    await new Promise(resolve => setTimeout(resolve, 50));
   });
 
   describe('SSH Profile Management', () => {
@@ -295,7 +336,7 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
   describe('SSH Connection Testing', () => {
     it('should test SSH connection with password auth (mock)', async () => {
       // Mock successful connection
-      vi.spyOn(sshConnectionManager, 'testConnection').mockResolvedValueOnce({
+      mockSshConnectionManager.testConnection.mockResolvedValueOnce({
         success: true,
         connectionTime: 1500
       });
@@ -322,7 +363,7 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
 
     it('should handle SSH connection failure (mock)', async () => {
       // Mock failed connection
-      vi.spyOn(sshConnectionManager, 'testConnection').mockResolvedValueOnce({
+      mockSshConnectionManager.testConnection.mockResolvedValueOnce({
         success: false,
         error: 'Connection timeout'
       });
@@ -558,7 +599,7 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
 
       for (const endpoint of endpoints) {
         const response = await app.inject({
-          method: endpoint.method as any,
+          method: endpoint.method as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
           url: endpoint.url
           // No authorization header
         });

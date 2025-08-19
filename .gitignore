@@ -121,3 +121,4 @@ k8s/**/secrets.yaml
 .cache/
 .serena/cache
 .mcp.json
+.claude/settings.local.json
