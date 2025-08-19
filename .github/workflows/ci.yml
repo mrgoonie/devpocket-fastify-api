@@ -62,8 +62,34 @@ jobs:
           echo "DATABASE_URL=postgresql://devpocket_test:devpocket_test@localhost:5432/devpocket-fastify-api-test?schema=public" >> .env.test
           echo "REDIS_URL=redis://localhost:6379/1" >> .env.test
 
+      - name: Verify environment setup
+        run: |
+          echo "=== Environment Variables ==="
+          echo "NODE_ENV: $NODE_ENV"
+          echo "DATABASE_URL: postgresql://devpocket_test:devpocket_test@localhost:5432/devpocket-fastify-api-test?schema=public"
+          echo "REDIS_URL: redis://localhost:6379/1"
+          echo ""
+          echo "=== Database Service Health ==="
+          pg_isready -h localhost -p 5432 -U devpocket_test || echo "PostgreSQL not ready"
+          echo ""
+          echo "=== Environment File Contents ==="
+          cat .env.test
+        env:
+          NODE_ENV: test
+
       - name: Generate Prisma client
         run: pnpm run db:generate
+
+      - name: Test database connection
+        run: |
+          echo "=== Testing Database Connectivity ==="
+          PGPASSWORD=devpocket_test psql -h localhost -p 5432 -U devpocket_test -d devpocket-fastify-api-test -c "SELECT version();" || {
+            echo "Direct psql connection failed, trying to debug..."
+            echo "Available databases:"
+            PGPASSWORD=devpocket_test psql -h localhost -p 5432 -U devpocket_test -d postgres -c "\l" || echo "Could not list databases"
+            exit 1
+          }
+          echo "Database connection successful!"
 
       - name: Run database migrations
         run: pnpm run db:push

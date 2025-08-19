@@ -5,16 +5,16 @@ services:
     image: postgres:15-alpine
     container_name: devpocket-postgres-test
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgresql
-      POSTGRES_DB: devpocket_test
+      POSTGRES_USER: devpocket_test
+      POSTGRES_PASSWORD: devpocket_test
+      POSTGRES_DB: devpocket-fastify-api-test
     ports:
       - "5432:5432"
     volumes:
       - postgres_test_data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U devpocket_test"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,9 +28,9 @@ services:
       - "6379:6379"
     volumes:
       - redis_test_data:/data
-    command: redis-server --appendonly yes --requirepass 49XVKOxoHn
+    command: redis-server --appendonly yes
     healthcheck:
-      test: ["CMD", "redis-cli", "--askpass", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
