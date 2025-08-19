@@ -70,7 +70,7 @@ export async function setupPlugins(fastify: FastifyInstance) {
   await fastify.register(import('@fastify/swagger-ui'), {
     routePrefix: '/docs',
     uiConfig: {
-      docExpansion: 'full',
+      docExpansion: 'list',
       deepLinking: false,
     },
     staticCSP: true,
