@@ -7,6 +7,96 @@ import { UserResponse } from '../auth/auth.schema.js';
 import { PlanInfo } from './payment.schema.js';
 import crypto from 'crypto';
 
+// Generic API Response Type
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+  code?: string;
+  error?: string;
+  plans?: PlanInfo[];
+  subscription?: SubscriptionData;
+  hasActiveSubscription?: boolean;
+  allowed?: boolean;
+  currentUsage?: number;
+  limit?: number;
+  pagination?: PaginationData;
+}
+
+// Specific Data Interfaces
+interface SubscriptionLimit {
+  sshConnections: number;
+  aiRequests: number;
+  cloudHistory: boolean;
+}
+
+interface SubscriptionUsage {
+  sshConnections: number;
+  aiRequests: number;
+}
+
+interface SubscriptionData {
+  planType: 'FREE' | 'PRO' | 'TEAM';
+  status: 'ACTIVE' | 'CANCELLED' | 'PAST_DUE';
+  limits: SubscriptionLimit;
+  usage: SubscriptionUsage;
+}
+
+interface PlansData {
+  plans: PlanInfo[];
+}
+
+interface CurrentSubscriptionData {
+  subscription: SubscriptionData;
+}
+
+interface SubscriptionStatusData {
+  hasActiveSubscription: boolean;
+  subscription: SubscriptionData;
+}
+
+interface UsageLimitData {
+  allowed: boolean;
+  currentUsage: number;
+  limit: number;
+}
+
+interface CancelSubscriptionData {
+  message: string;
+}
+
+interface PaymentHistoryItem {
+  id: string;
+  user_id: string;
+  amount: number;
+  currency: string;
+  provider_ref: string;
+  status: string;
+  created_at: string;
+}
+
+interface PaginationData {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+interface PaymentHistoryData {
+  data: PaymentHistoryItem[];
+  pagination: PaginationData;
+}
+
+interface WebhookData {
+  success: boolean;
+}
+
+interface HealthCheckData {
+  status: string;
+  service: string;
+  timestamp: string;
+}
+
 describe('Payment Module', () => {
   let app: FastifyInstance;
   let testUser: UserResponse;
@@ -39,22 +129,26 @@ describe('Payment Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const data = response.json();
+        const { plans } = response.json<ApiResponse<PlansData>>();
 
-        expect(data.plans).toBeDefined();
-        expect(data.plans).toHaveLength(3);
+        expect(plans).toBeDefined();
+        if (plans) {
+          expect(plans).toHaveLength(3);
 
-        const planTypes = data.plans.map((p: PlanInfo) => p.type);
-        expect(planTypes).toContain('FREE');
-        expect(planTypes).toContain('PRO');
-        expect(planTypes).toContain('TEAM');
+          const planTypes = plans.map((p: PlanInfo) => p.type);
+          expect(planTypes).toContain('FREE');
+          expect(planTypes).toContain('PRO');
+          expect(planTypes).toContain('TEAM');
 
-        const freePlan = data.plans.find((p: PlanInfo) => p.type === 'FREE');
-        expect(freePlan).toBeDefined();
-        expect(freePlan.price).toBe(0);
-        expect(freePlan.limits.sshConnections).toBe(1);
-        expect(freePlan.limits.aiRequests).toBe(10);
-        expect(freePlan.limits.cloudHistory).toBe(false);
+          const freePlan = plans.find((p: PlanInfo) => p.type === 'FREE');
+          expect(freePlan).toBeDefined();
+          if (freePlan) {
+            expect(freePlan.price).toBe(0);
+            expect(freePlan.limits.sshConnections).toBe(1);
+            expect(freePlan.limits.aiRequests).toBe(10);
+            expect(freePlan.limits.cloudHistory).toBe(false);
+          }
+        }
       });
     });
 
@@ -75,7 +169,8 @@ describe('Payment Module', () => {
         });
 
         expect(response.statusCode).toBe(400);
-        expect(response.json().error).toBe('User already has a subscription');
+        const { error } = response.json<ApiResponse<null>>();
+        expect(error).toBe('User already has a subscription');
       });
 
       it('should auto-create free subscription when getting current subscription', async () => {
@@ -88,10 +183,12 @@ describe('Payment Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const data = response.json();
-        expect(data.subscription).toBeDefined();
-        expect(data.subscription.planType).toBe('FREE');
-        expect(data.subscription.status).toBe('ACTIVE');
+        const { subscription } = response.json<ApiResponse<CurrentSubscriptionData>>();
+        expect(subscription).toBeDefined();
+        if (subscription) {
+          expect(subscription.planType).toBe('FREE');
+          expect(subscription.status).toBe('ACTIVE');
+        }
       });
     });
 
@@ -106,13 +203,15 @@ describe('Payment Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const data = response.json();
+        const { subscription } = response.json<ApiResponse<CurrentSubscriptionData>>();
 
-        expect(data.subscription).toBeDefined();
-        expect(data.subscription.planType).toBe('FREE');
-        expect(data.subscription.status).toBe('ACTIVE');
-        expect(data.subscription.limits).toBeDefined();
-        expect(data.subscription.usage).toBeDefined();
+        expect(subscription).toBeDefined();
+        if (subscription) {
+          expect(subscription.planType).toBe('FREE');
+          expect(subscription.status).toBe('ACTIVE');
+          expect(subscription.limits).toBeDefined();
+          expect(subscription.usage).toBeDefined();
+        }
       });
 
       it('should get subscription status', async () => {
@@ -125,10 +224,10 @@ describe('Payment Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const data = response.json();
+        const { hasActiveSubscription, subscription } = response.json<ApiResponse<SubscriptionStatusData>>();
 
-        expect(data.hasActiveSubscription).toBe(true);
-        expect(data.subscription).toBeDefined();
+        expect(hasActiveSubscription).toBe(true);
+        expect(subscription).toBeDefined();
       });
     });
 
@@ -143,7 +242,7 @@ describe('Payment Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const data = response.json();
+        const data = response.json<ApiResponse<UsageLimitData>>();
 
         expect(data.allowed).toBe(true);
         expect(data.currentUsage).toBe(0);
@@ -160,7 +259,7 @@ describe('Payment Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const data = response.json();
+        const data = response.json<ApiResponse<UsageLimitData>>();
 
         expect(data.allowed).toBe(true);
         expect(data.currentUsage).toBe(0);
@@ -203,8 +302,8 @@ describe('Payment Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const data = response.json();
-        expect(data.message).toBe('Subscription cancelled successfully');
+        const { message } = response.json<ApiResponse<CancelSubscriptionData>>();
+        expect(message).toBe('Subscription cancelled successfully');
 
         const subscription = await prisma.subscription.findFirst({
           where: { user_id: testUser.id },
@@ -245,12 +344,14 @@ describe('Payment Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const data = response.json();
+        const { data, pagination } = response.json<ApiResponse<PaymentHistoryData>>();
 
-        expect(data.data).toBeDefined();
-        expect(data.data).toHaveLength(2);
-        expect(data.pagination).toBeDefined();
-        expect(data.pagination.total).toBe(2);
+        expect(data).toBeDefined();
+        expect(data).toHaveLength(2);
+        expect(pagination).toBeDefined();
+        if (pagination) {
+          expect(pagination.total).toBe(2);
+        }
       });
 
       it('should get paginated payment history', async () => {
@@ -263,13 +364,15 @@ describe('Payment Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const data = response.json();
+        const { data, pagination } = response.json<ApiResponse<PaymentHistoryData>>();
 
-        expect(data.data).toHaveLength(1);
-        expect(data.pagination.page).toBe(1);
-        expect(data.pagination.limit).toBe(1);
-        expect(data.pagination.total).toBe(2);
-        expect(data.pagination.pages).toBe(2);
+        expect(data).toHaveLength(1);
+        if (pagination) {
+          expect(pagination.page).toBe(1);
+          expect(pagination.limit).toBe(1);
+          expect(pagination.total).toBe(2);
+          expect(pagination.pages).toBe(2);
+        }
       });
     });
   });
@@ -323,8 +426,8 @@ describe('Payment Module', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.success).toBe(true);
+      const { success } = response.json<ApiResponse<WebhookData>>();
+      expect(success).toBe(true);
 
       const subscription = await prisma.subscription.findFirst({
         where: { user_id: user.id },
@@ -362,7 +465,8 @@ describe('Payment Module', () => {
       });
 
       expect(response.statusCode).toBe(401);
-      expect(response.json().error).toBe('Invalid webhook signature');
+      const { error } = response.json<ApiResponse<null>>();
+      expect(error).toBe('Invalid webhook signature');
     });
 
     it('should reject webhook with missing signature', async () => {
@@ -396,7 +500,7 @@ describe('Payment Module', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const data = response.json();
+      const data = response.json<HealthCheckData>();
 
       expect(data.status).toBe('ok');
       expect(data.service).toBe('payment');

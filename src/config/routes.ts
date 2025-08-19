@@ -1,14 +1,17 @@
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { AuthType } from '@prisma/client';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
 import { paymentRoutes } from '@/modules/payment/payment.routes.js';
 import { healthRoutes } from '@/shared/health/health.routes.js';
+import { AuthenticatedRequest } from '@/modules/auth/auth.middleware.js';
 
+// Define body types for clarity in mock routes
 interface SSHProfileCreateBody {
   name: string;
   host: string;
   port: number;
   username: string;
-  auth_type: string;
+  auth_type: AuthType;
   private_key?: string;
   public_key?: string;
 }
@@ -26,8 +29,7 @@ export async function setupRoutes(fastify: FastifyInstance) {
   await fastify.register(async function apiRoutes(fastify) {
     // Auth routes
     await fastify.register(authRoutes, { prefix: '/auth' });
-    
-    // Terminal routes (includes SSH and terminal session management)
+
     // Skip terminal routes in test environment to avoid SSH2 native module crashes
     if (process.env.NODE_ENV !== 'test') {
       try {
@@ -39,312 +41,196 @@ export async function setupRoutes(fastify: FastifyInstance) {
     } else {
       // Register mock terminal routes for testing
       await fastify.register(async function mockTerminalRoutes(fastify) {
-        // Simple auth check for tests - extract user ID from JWT for mock
-        const checkAuth = async (request: FastifyRequest, reply: FastifyReply) => {
+        // Mock authentication preHandler for test routes
+        const mockAuth = async (request: FastifyRequest, reply: FastifyReply) => {
           const authHeader = request.headers.authorization;
           if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            reply.code(401);
-            return { success: false, error: 'Unauthorized' };
+            return reply.code(401).send({ success: false, error: 'Unauthorized' });
           }
-          
-          // For tests, decode JWT to get userId (simplified)
+
           const token = authHeader.replace('Bearer ', '');
           try {
-            // Simple JWT decode for tests (unsafe but fine for tests)
+            // Unsafe JWT decode is acceptable for mock test environment
             const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-            (request as any).authUser = { userId: payload.userId };
-            return null;
-          } catch (error) {
-            reply.code(401);
-            return { success: false, error: 'Invalid token' };
+            if (!payload.userId) {
+               return reply.code(401).send({ success: false, error: 'Invalid token payload' });
+            }
+            // Attach a fully-formed authUser object to the request
+            (request as AuthenticatedRequest).authUser = {
+              userId: payload.userId,
+              sessionId: 'mock-session-id-for-testing',
+              email: 'test-user@example.com'
+            };
+          } catch (_error) {
+            return reply.code(401).send({ success: false, error: 'Invalid token' });
           }
         };
-        fastify.get('/ssh/profiles', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
-          const authUser = (request as any).authUser;
-          if (!authUser) {
-            reply.code(401);
-            return { success: false, error: 'Authentication required' };
-          }
-          
+
+        const secureRoutesOptions = {
+          preHandler: [mockAuth],
+          websocket: false, // Explicitly set for mock routes to avoid type conflicts
+        };
+
+        fastify.get('/ssh/profiles', secureRoutesOptions, async (request, reply) => {
+          const req = request as AuthenticatedRequest;
           try {
             const profiles = await fastify.prisma.sshProfile.findMany({
-              where: { user_id: authUser.userId },
+              where: { user_id: req.authUser.userId },
               orderBy: { created_at: 'desc' }
             });
-            
-            return { 
-              success: true, 
-              data: { 
+            return {
+              success: true,
+              data: {
                 profiles: profiles.map(profile => ({
-                  id: profile.id,
-                  name: profile.name,
-                  host: profile.host,
-                  port: profile.port,
-                  username: profile.username,
-                  auth_type: profile.auth_type,
-                  has_ssh_key: false, // Mock value for tests
-                  created_at: profile.created_at,
-                  updated_at: profile.updated_at
+                  ...profile,
+                  has_ssh_key: false, // Mock value
                 })),
                 total: profiles.length
-              } 
+              }
             };
           } catch (error) {
-            fastify.log.error('Error getting SSH profiles in mock route:', error);
-            reply.code(500);
-            return { success: false, error: 'Failed to get SSH profiles' };
+            fastify.log.error({ err: error }, 'Error getting SSH profiles in mock route');
+            return reply.code(500).send({ success: false, error: 'Failed to get SSH profiles' });
           }
         });
-        
-        fastify.post('/ssh/profiles', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
+
+        fastify.post('/ssh/profiles', secureRoutesOptions, async (request, reply) => {
           const body = request.body as SSHProfileCreateBody;
-          
-          // Validate SSH key requirements
+
           if (body.auth_type === 'SSH_KEY' && (!body.private_key || !body.public_key)) {
-            reply.code(400);
-            return { 
-              success: false, 
-              error: 'Private and public keys are required for SSH key authentication' 
-            };
+            return reply.code(400).send({
+              success: false,
+              error: 'Private and public keys are required for SSH key authentication'
+            });
           }
-          
-          // Get user from auth
-          const authUser = (request as any).authUser;
-          if (!authUser) {
-            reply.code(401);
-            return { success: false, error: 'Authentication required' };
-          }
-          
+
           try {
-            // Check for duplicate profile name for this user
+            const req = request as AuthenticatedRequest;
             const existingProfile = await fastify.prisma.sshProfile.findFirst({
               where: {
-                user_id: authUser.userId,
+                user_id: req.authUser.userId,
                 name: body.name
               }
             });
 
             if (existingProfile) {
-              reply.code(409);
-              return {
+              return reply.code(409).send({
                 success: false,
                 error: 'SSH profile with this name already exists'
-              };
+              });
             }
-            
-            // Create actual database record for test
+
             const profile = await fastify.prisma.sshProfile.create({
               data: {
-                user_id: authUser.userId,
+                user_id: req.authUser.userId,
                 name: body.name,
                 host: body.host,
                 port: body.port,
                 username: body.username,
-                auth_type: body.auth_type as any
+                auth_type: body.auth_type
               }
             });
-            
-            reply.code(201);
-            return { 
-              success: true, 
-              data: { 
-                id: profile.id, 
-                name: profile.name,
-                host: profile.host,
-                port: profile.port,
-                username: profile.username,
-                auth_type: profile.auth_type,
+
+            return reply.code(201).send({
+              success: true,
+              data: {
+                ...profile,
                 has_ssh_key: !!body.private_key,
-                created_at: profile.created_at,
-                updated_at: profile.updated_at
-              } 
-            };
+              }
+            });
           } catch (error) {
-            fastify.log.error('Error creating SSH profile in mock route:', error);
-            reply.code(500);
-            return { success: false, error: 'Failed to create SSH profile' };
+            fastify.log.error({ err: error }, 'Error creating SSH profile in mock route');
+            return reply.code(500).send({ success: false, error: 'Failed to create SSH profile' });
           }
         });
-        
-        fastify.put('/ssh/profiles/:id', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
+
+        fastify.put('/ssh/profiles/:id', secureRoutesOptions, async (request, reply) => {
           const body = request.body as SSHProfileCreateBody;
-          return { 
-            success: true, 
-            data: { 
-              id: (request.params as { id: string }).id,
+          const { id } = request.params as { id: string };
+          // This is a mock, so we just return the updated data without DB interaction
+          return reply.send({
+            success: true,
+            data: {
+              id,
               name: body.name,
               host: body.host,
               port: body.port,
               username: body.username
-            } 
-          };
+            }
+          });
         });
-        
-        fastify.delete('/ssh/profiles/:id', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
-          reply.code(204);
-          return;
+
+        fastify.delete('/ssh/profiles/:id', secureRoutesOptions, async (_request, reply) => {
+          return reply.code(204).send();
         });
-        
-        fastify.get('/ssh/profiles/:id', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
-          reply.code(404);
-          return { success: false, error: 'Profile not found' };
+
+        fastify.get('/ssh/profiles/:id', secureRoutesOptions, async (_request, reply) => {
+          return reply.code(404).send({ success: false, error: 'Profile not found' });
         });
-        
-        fastify.post('/ssh/test-connection', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
-          const body = request.body as { host: string; port: number; username: string; auth_type: string; password?: string; };
-          
-          // Simulate connection failure for invalid hosts
-          if (body.host === 'invalid.example.com' || body.host.includes('invalid')) {
-            return { 
-              success: true, 
-              data: { 
-                success: false, 
-                error: 'Connection timeout',
-                connection_time: null
-              } 
-            };
+
+        fastify.post('/ssh/test-connection', secureRoutesOptions, async (request, reply) => {
+          const body = request.body as { host: string };
+          if (body.host.includes('invalid')) {
+            return reply.send({
+              success: true,
+              data: { success: false, error: 'Connection timeout', connection_time: null }
+            });
           }
-          
-          return { success: true, data: { success: true, connection_time: 1500 } };
+          return reply.send({ success: true, data: { success: true, connection_time: 150 } });
         });
-        
-        fastify.get('/terminal/sessions', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
-          const authUser = (request as any).authUser;
-          if (!authUser) {
-            reply.code(401);
-            return { success: false, error: 'Authentication required' };
-          }
-          
+
+        fastify.get('/terminal/sessions', secureRoutesOptions, async (request, reply) => {
+          const req = request as AuthenticatedRequest;
           try {
             const sessions = await fastify.prisma.terminalSession.findMany({
-              where: { user_id: authUser.userId },
+              where: { user_id: req.authUser.userId },
               orderBy: { created_at: 'desc' }
             });
-            
-            return { 
-              success: true, 
-              data: { 
-                sessions: sessions.map(session => ({
-                  id: session.id,
-                  session_id: session.session_id,
-                  status: session.status,
-                  profile_id: session.profile_id,
-                  created_at: session.created_at,
-                  ended_at: session.ended_at
-                })),
-                total: sessions.length
-              } 
+            return {
+              success: true,
+              data: { sessions, total: sessions.length }
             };
           } catch (error) {
-            fastify.log.error('Error getting terminal sessions in mock route:', error);
-            reply.code(500);
-            return { success: false, error: 'Failed to get terminal sessions' };
+            fastify.log.error({ err: error }, 'Error getting terminal sessions in mock route');
+            return reply.code(500).send({ success: false, error: 'Failed to get terminal sessions' });
           }
         });
-        
-        fastify.post('/terminal/sessions', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
+
+        fastify.post('/terminal/sessions', secureRoutesOptions, async (request, reply) => {
           const body = request.body as TerminalSessionCreateBody;
-          
-          // Extract user ID from auth token (simplified for test)
-          const authHeader = request.headers.authorization;
-          const token = authHeader?.replace('Bearer ', '');
-          
-          // In tests, we'll assume the auth middleware populates authUser
-          const authUser = (request as any).authUser;
-          if (!authUser) {
-            reply.code(401);
-            return { success: false, error: 'Authentication required' };
-          }
-          
           try {
-            // Create actual database record for test
+            const req = request as AuthenticatedRequest;
             const session = await fastify.prisma.terminalSession.create({
               data: {
-                user_id: authUser.userId,
+                user_id: req.authUser.userId,
                 profile_id: body.profile_id,
-                session_id: `session_${authUser.userId}_${Date.now()}`,
+                session_id: `session_${req.authUser.userId}_${Date.now()}`,
                 status: 'ACTIVE'
               }
             });
-            
-            reply.code(201);
-            return { 
-              success: true, 
-              data: { 
-                id: session.id,
-                session_id: session.session_id,
-                status: session.status,
-                profile_id: session.profile_id,
-                created_at: session.created_at,
-                ended_at: session.ended_at
-              } 
-            };
+            return reply.code(201).send({ success: true, data: session });
           } catch (error) {
-            fastify.log.error('Error creating terminal session in mock route:', error);
-            reply.code(500);
-            return { success: false, error: 'Failed to create session' };
+            fastify.log.error({ err: error }, 'Error creating terminal session in mock route');
+            return reply.code(500).send({ success: false, error: 'Failed to create session' });
           }
         });
-        
-        fastify.delete('/terminal/sessions/:id', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
-          reply.code(204);
-          return;
+
+        fastify.delete('/terminal/sessions/:id', secureRoutesOptions, async (_request, reply) => {
+          return reply.code(204).send();
         });
-        
-        fastify.get('/terminal/sessions/:id/history', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
-          const authUser = (request as any).authUser;
-          if (!authUser) {
-            reply.code(401);
-            return { success: false, error: 'Authentication required' };
-          }
-          
+
+        fastify.get('/terminal/sessions/:id/history', secureRoutesOptions, async (request, reply) => {
+          const req = request as AuthenticatedRequest;
           const { id: sessionId } = request.params as { id: string };
-          
           try {
-            // Verify session belongs to user
             const session = await fastify.prisma.terminalSession.findFirst({
-              where: { 
-                id: sessionId,
-                user_id: authUser.userId 
-              }
+              where: { id: sessionId, user_id: req.authUser.userId }
             });
-            
+
             if (!session) {
-              reply.code(404);
-              return { success: false, error: 'Session not found' };
+              return reply.code(404).send({ success: false, error: 'Session not found' });
             }
-            
-            // Handle pagination query parameters  
+
             const query = request.query as { limit?: string; offset?: string; };
             const limit = query.limit ? parseInt(query.limit, 10) : undefined;
             const offset = query.offset ? parseInt(query.offset, 10) : undefined;
@@ -355,52 +241,37 @@ export async function setupRoutes(fastify: FastifyInstance) {
               take: limit,
               skip: offset
             });
-            
-            // Get total count for pagination
             const totalCount = await fastify.prisma.commandHistory.count({
               where: { session_id: sessionId }
             });
-            
-            return { 
-              success: true, 
-              data: { 
-                history: history.map(cmd => ({
-                  id: cmd.id,
-                  command: cmd.command,
-                  output: cmd.output,
-                  status: cmd.status,
-                  created_at: cmd.created_at
-                })),
-                total: totalCount
-              } 
+
+            return {
+              success: true,
+              data: { history, total: totalCount }
             };
           } catch (error) {
-            fastify.log.error('Error getting command history in mock route:', error);
-            reply.code(500);
-            return { success: false, error: 'Failed to get command history' };
+            fastify.log.error({ err: error }, 'Error getting command history in mock route');
+            return reply.code(500).send({ success: false, error: 'Failed to get command history' });
           }
         });
-        
-        fastify.get('/terminal/stats', async (request, reply) => {
-          const authError = await checkAuth(request, reply);
-          if (authError) return authError;
-          
-          return { 
-            success: true, 
-            data: { 
+
+        fastify.get('/terminal/stats', secureRoutesOptions, async (_request, reply) => {
+          return reply.send({
+            success: true,
+            data: {
               pty_sessions: { total: 0, active: 0 },
               ssh_connections: { total: 0, active: 0 },
               timestamp: new Date().toISOString()
-            } 
-          };
+            }
+          });
         });
       }, { prefix: '/' });
     }
-    
-    // Payment routes (includes subscriptions and webhooks)
+
+    // Payment routes
     await fastify.register(paymentRoutes);
-    
-    // Placeholder route for testing
+
+    // Placeholder for API health/status
     fastify.get('/test', {
       schema: {
         tags: ['Test'],

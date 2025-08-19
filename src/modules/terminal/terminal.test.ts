@@ -9,6 +9,63 @@ import { AuthType, SessionStatus } from '@prisma/client';
 import * as sshService from './ssh.service.js';
 import * as ptyService from './pty.service.js';
 
+// Define interfaces for expected API response shapes
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  error?: string;
+}
+
+interface SshProfileData {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  auth_type: AuthType;
+  has_ssh_key: boolean;
+}
+
+interface SshProfileListData {
+  profiles: SshProfileData[];
+  total: number;
+}
+
+interface SshConnectionTestData {
+  success: boolean;
+  connection_time?: number;
+  error?: string;
+}
+
+interface TerminalSessionData {
+  id: string;
+  status: SessionStatus;
+  profile_id: string | null;
+}
+
+interface TerminalSessionListData {
+  sessions: TerminalSessionData[];
+  total: number;
+}
+
+interface CommandHistoryData {
+  id: string;
+  command: string;
+  output: string;
+  status: number;
+}
+
+interface CommandHistoryListData {
+  history: CommandHistoryData[];
+  total: number;
+}
+
+interface TerminalStatsData {
+  pty_sessions: { total: number; active: number };
+  ssh_connections: { total: number; active: number };
+  timestamp: string;
+}
+
 // Mock the ssh2 library to avoid native addon issues in tests
 vi.mock('ssh2', () => ({
   Client: vi.fn(() => ({
@@ -69,12 +126,12 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(201);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data.name).toBe('Test Server');
-      expect(data.data.host).toBe('test.example.com');
-      expect(data.data.auth_type).toBe(AuthType.SSH_KEY);
-      expect(data.data.has_ssh_key).toBe(true);
+      const { success, data } = response.json<ApiResponse<SshProfileData>>();
+      expect(success).toBe(true);
+      expect(data.name).toBe('Test Server');
+      expect(data.host).toBe('test.example.com');
+      expect(data.auth_type).toBe(AuthType.SSH_KEY);
+      expect(data.has_ssh_key).toBe(true);
     });
 
     it('should create SSH profile with password authentication', async () => {
@@ -92,9 +149,9 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(201);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data.has_ssh_key).toBe(false);
+      const { success, data } = response.json<ApiResponse<SshProfileData>>();
+      expect(success).toBe(true);
+      expect(data.has_ssh_key).toBe(false);
     });
 
     it('should reject SSH key profile without keys', async () => {
@@ -113,9 +170,9 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(400);
-      const data = response.json();
-      expect(data.success).toBe(false);
-      expect(data.error).toContain('Private and public keys are required');
+      const { success, error } = response.json<ApiResponse<null>>();
+      expect(success).toBe(false);
+      expect(error).toContain('Private and public keys are required');
     });
 
     it('should reject duplicate profile names', async () => {
@@ -148,9 +205,9 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(409);
-      const data = response.json();
-      expect(data.success).toBe(false);
-      expect(data.error).toContain('already exists');
+      const { success, error } = response.json<ApiResponse<null>>();
+      expect(success).toBe(false);
+      expect(error).toContain('already exists');
     });
 
     it('should list user SSH profiles', async () => {
@@ -190,10 +247,10 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data.profiles).toHaveLength(2);
-      expect(data.data.total).toBe(2);
+      const { success, data } = response.json<ApiResponse<SshProfileListData>>();
+      expect(success).toBe(true);
+      expect(data.profiles).toHaveLength(2);
+      expect(data.total).toBe(2);
     });
 
     it('should update SSH profile', async () => {
@@ -211,7 +268,7 @@ describe('Terminal Module Integration Tests', () => {
         },
       });
 
-      const profileId = createResponse.json().data.id;
+      const { data: { id: profileId } } = createResponse.json<ApiResponse<{ id: string }>>();
 
       // Update profile
       const response = await app.inject({
@@ -227,12 +284,12 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data.name).toBe('Updated Server');
-      expect(data.data.host).toBe('updated.example.com');
-      expect(data.data.port).toBe(2222);
-      expect(data.data.username).toBe('updated');
+      const { success, data } = response.json<ApiResponse<SshProfileData>>();
+      expect(success).toBe(true);
+      expect(data.name).toBe('Updated Server');
+      expect(data.host).toBe('updated.example.com');
+      expect(data.port).toBe(2222);
+      expect(data.username).toBe('updated');
     });
 
     it('should delete SSH profile', async () => {
@@ -250,7 +307,7 @@ describe('Terminal Module Integration Tests', () => {
         },
       });
 
-      const profileId = createResponse.json().data.id;
+      const { data: { id: profileId } } = createResponse.json<ApiResponse<{ id: string }>>();
 
       // Delete profile
       const response = await app.inject({
@@ -288,7 +345,7 @@ describe('Terminal Module Integration Tests', () => {
       // This test requires a more specific mock for testConnection
       vi.spyOn(sshService.sshConnectionManager, 'testConnection').mockResolvedValueOnce({
         success: true,
-        connectionTime: 1500,
+        connectionTime: 150,
       });
 
       const response = await app.inject({
@@ -305,10 +362,10 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const data = response.json();
+      const { success, data } = response.json<ApiResponse<SshConnectionTestData>>();
+      expect(success).toBe(true);
       expect(data.success).toBe(true);
-      expect(data.data.success).toBe(true);
-      expect(data.data.connection_time).toBe(1500);
+      expect(data.connection_time).toBe(150);
     });
 
     it('should handle SSH connection failure (mock)', async () => {
@@ -332,10 +389,10 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data.success).toBe(false);
-      expect(data.data.error).toBe('Connection timeout');
+      const { success, data } = response.json<ApiResponse<SshConnectionTestData>>();
+      expect(success).toBe(true);
+      expect(data.success).toBe(false);
+      expect(data.error).toBe('Connection timeout');
     });
   });
 
@@ -363,10 +420,10 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(201);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data.status).toBe(SessionStatus.ACTIVE);
-      expect(data.data.profile_id).toBeNull();
+      const { success, data } = response.json<ApiResponse<TerminalSessionData>>();
+      expect(success).toBe(true);
+      expect(data.status).toBe(SessionStatus.ACTIVE);
+      expect(data.profile_id).toBeNull();
     });
 
     it('should create SSH terminal session', async () => {
@@ -384,7 +441,7 @@ describe('Terminal Module Integration Tests', () => {
         },
       });
 
-      const profileId = profileResponse.json().data.id;
+      const { data: { id: profileId } } = profileResponse.json<ApiResponse<{ id: string }>>();
 
       // Create SSH terminal session
       const response = await app.inject({
@@ -398,9 +455,9 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(201);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data.profile_id).toBe(profileId);
+      const { success, data } = response.json<ApiResponse<TerminalSessionData>>();
+      expect(success).toBe(true);
+      expect(data.profile_id).toBe(profileId);
     });
 
     it('should list user terminal sessions', async () => {
@@ -426,9 +483,9 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data.sessions).toHaveLength(2);
+      const { success, data } = response.json<ApiResponse<TerminalSessionListData>>();
+      expect(success).toBe(true);
+      expect(data.sessions).toHaveLength(2);
     });
 
     it('should delete terminal session', async () => {
@@ -440,7 +497,7 @@ describe('Terminal Module Integration Tests', () => {
         payload: { session_type: 'local' },
       });
 
-      const sessionId = createResponse.json().data.id;
+      const { data: { id: sessionId } } = createResponse.json<ApiResponse<{ id: string }>>();
 
       // Delete session
       const response = await app.inject({
@@ -475,9 +532,8 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(sessionResponse.statusCode).toBe(201);
-      const sessionData = sessionResponse.json();
-      expect(sessionData.success).toBe(true);
-      const sessionId = sessionData.data.id;
+      const { success, data: { id: sessionId } } = sessionResponse.json<ApiResponse<{ id: string }>>();
+      expect(success).toBe(true);
 
       // Add some command history directly to database
       await prisma.commandHistory.createMany({
@@ -504,10 +560,10 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data.history).toHaveLength(2);
-      expect(data.data.total).toBe(2);
+      const { success: historySuccess, data } = response.json<ApiResponse<CommandHistoryListData>>();
+      expect(historySuccess).toBe(true);
+      expect(data.history).toHaveLength(2);
+      expect(data.total).toBe(2);
     });
 
     it('should support pagination in command history', async () => {
@@ -520,9 +576,8 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(sessionResponse.statusCode).toBe(201);
-      const sessionData = sessionResponse.json();
-      expect(sessionData.success).toBe(true);
-      const sessionId = sessionData.data.id;
+      const { success, data: { id: sessionId } } = sessionResponse.json<ApiResponse<{ id: string }>>();
+      expect(success).toBe(true);
 
       // Add multiple commands to history
       const commands = Array.from({ length: 15 }, (_, i) => ({
@@ -542,10 +597,10 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data.history).toHaveLength(10);
-      expect(data.data.total).toBe(15);
+      const { success: historySuccess, data } = response.json<ApiResponse<CommandHistoryListData>>();
+      expect(historySuccess).toBe(true);
+      expect(data.history).toHaveLength(10);
+      expect(data.total).toBe(15);
     });
   });
 
@@ -570,11 +625,11 @@ describe('Terminal Module Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.success).toBe(true);
-      expect(data.data).toHaveProperty('pty_sessions');
-      expect(data.data).toHaveProperty('ssh_connections');
-      expect(data.data).toHaveProperty('timestamp');
+      const { success, data } = response.json<ApiResponse<TerminalStatsData>>();
+      expect(success).toBe(true);
+      expect(data).toHaveProperty('pty_sessions');
+      expect(data).toHaveProperty('ssh_connections');
+      expect(data).toHaveProperty('timestamp');
     });
   });
 

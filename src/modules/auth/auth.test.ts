@@ -6,6 +6,36 @@ import { createTestApp, createTestUserAndLogin } from '@/tests/helper.js';
 import { prisma } from '@/shared/database/client.js';
 import { UserResponse } from './auth.schema.js';
 
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+  code?: string;
+}
+
+interface RegisterData {
+  user: UserResponse;
+}
+
+interface LoginData {
+  user: UserResponse;
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}
+
+interface MeData {
+  user: UserResponse;
+}
+
+interface RefreshTokenData {
+  access_token: string;
+}
+
+interface VerifyEmailData {
+  user: UserResponse;
+}
+
 describe('Authentication Module', () => {
   let app: FastifyInstance;
 
@@ -33,11 +63,11 @@ describe('Authentication Module', () => {
       });
 
       expect(response.statusCode).toBe(201);
-      const json = response.json();
-      expect(json.success).toBe(true);
-      expect(json.data.user.email).toBe(userData.email.toLowerCase());
-      expect(json.data.user.username).toBe(userData.username);
-      expect(json.data.user.email_verified).toBe(false);
+      const { success, data } = response.json<ApiResponse<RegisterData>>();
+      expect(success).toBe(true);
+      expect(data.user.email).toBe(userData.email.toLowerCase());
+      expect(data.user.username).toBe(userData.username);
+      expect(data.user.email_verified).toBe(false);
     });
 
     it('should fail with invalid email', async () => {
@@ -92,8 +122,8 @@ describe('Authentication Module', () => {
       });
 
       expect(response.statusCode).toBe(409);
-      const json = response.json();
-      expect(json.code).toBe('EMAIL_EXISTS');
+      const { code } = response.json<ApiResponse<null>>();
+      expect(code).toBe('EMAIL_EXISTS');
     });
   });
 
@@ -110,12 +140,12 @@ describe('Authentication Module', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const json = response.json();
-      expect(json.success).toBe(true);
-      expect(json.data.user.email).toBe(user.email);
-      expect(json.data.access_token).toBeDefined();
-      expect(json.data.refresh_token).toBeDefined();
-      expect(json.data.expires_in).toBeTypeOf('number');
+      const { success, data } = response.json<ApiResponse<LoginData>>();
+      expect(success).toBe(true);
+      expect(data.user.email).toBe(user.email);
+      expect(data.access_token).toBeDefined();
+      expect(data.refresh_token).toBeDefined();
+      expect(data.expires_in).toBeTypeOf('number');
     });
 
         it('should fail with invalid email', async () => {
@@ -130,8 +160,8 @@ describe('Authentication Module', () => {
       });
 
       expect(response.statusCode).toBe(401);
-      const json = response.json();
-      expect(json.code).toBe('INVALID_CREDENTIALS');
+      const { code } = response.json<ApiResponse<null>>();
+      expect(code).toBe('INVALID_CREDENTIALS');
     });
 
         it('should fail with invalid password', async () => {
@@ -146,8 +176,8 @@ describe('Authentication Module', () => {
       });
 
       expect(response.statusCode).toBe(401);
-      const json = response.json();
-      expect(json.code).toBe('INVALID_CREDENTIALS');
+      const { code } = response.json<ApiResponse<null>>();
+      expect(code).toBe('INVALID_CREDENTIALS');
     });
   });
 
@@ -169,9 +199,9 @@ describe('Authentication Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const json = response.json();
-        expect(json.success).toBe(true);
-        expect(json.data.user.email).toBe(result.user.email);
+        const { success, data } = response.json<ApiResponse<MeData>>();
+        expect(success).toBe(true);
+        expect(data.user.email).toBe(result.user.email);
       });
 
       it('should fail without authorization header', async () => {
@@ -205,9 +235,9 @@ describe('Authentication Module', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        const json = response.json();
-        expect(json.success).toBe(true);
-        expect(json.data.access_token).toBeDefined();
+        const { success, data } = response.json<ApiResponse<RefreshTokenData>>();
+        expect(success).toBe(true);
+        expect(data.access_token).toBeDefined();
       });
 
       it('should fail with invalid refresh token', async () => {
@@ -275,9 +305,9 @@ describe('Authentication Module', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const json = response.json();
-      expect(json.success).toBe(true);
-      expect(json.data.user.email_verified).toBe(true);
+      const { success, data } = response.json<ApiResponse<VerifyEmailData>>();
+      expect(success).toBe(true);
+      expect(data.user.email_verified).toBe(true);
     });
 
         it('should fail with invalid token', async () => {

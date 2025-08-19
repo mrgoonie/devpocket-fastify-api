@@ -13,6 +13,6 @@ declare module 'light-my-request' {
     rawPayload: Buffer;
     trailers: Record<string, string>;
     body: string;
-    json: <T = any>() => T;
+    json: <T = unknown>() => T;
   }
 }

@@ -1,16 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { logger } from '@/shared/logger.js';
 
-// Type declaration for authenticated request
-declare module 'fastify' {
-  interface FastifyRequest {
-    authUser?: {
-      userId: string;
-      sessionId: string;
-      email: string;
-    };
-  }
-}
 
 // Exported type for authenticated requests
 export interface AuthenticatedRequest extends FastifyRequest {
