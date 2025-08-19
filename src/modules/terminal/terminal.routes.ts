@@ -9,9 +9,18 @@ export async function terminalRoutes(fastify: FastifyInstance) {
   const paymentService = new PaymentService(fastify.prisma);
 
   // Helper function to wrap authenticated middleware
-  const wrapAuthenticatedMiddleware = (middleware: (request: AuthenticatedRequest, reply: FastifyReply) => Promise<void>) => {
+  const wrapAuthenticatedMiddleware = (middleware: (_request: AuthenticatedRequest, _reply: FastifyReply) => Promise<void>) => {
     return async (request: FastifyRequest, reply: FastifyReply) => {
       return middleware(request as AuthenticatedRequest, reply);
+    };
+  };
+
+  // Helper function to wrap authenticated route handlers
+  const wrapAuthenticatedHandler = <T extends Record<string, unknown> = Record<string, unknown>>(
+    handler: (_request: AuthenticatedRequest & T, _reply: FastifyReply) => Promise<void>
+  ) => {
+    return async (request: FastifyRequest, reply: FastifyReply) => {
+      return handler(request as AuthenticatedRequest & T, reply);
     };
   };
 
@@ -41,7 +50,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
         required: ['name', 'host', 'port', 'username', 'auth_type']
       }
     }
-  }, terminalController.createSshProfile.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.createSshProfile.bind(terminalController)));
 
   fastify.get('/ssh/profiles', {
     preHandler: fastify.authenticate,
@@ -50,7 +59,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
       summary: 'List SSH profiles',
       description: 'Get all SSH profiles for the authenticated user'
     }
-  }, terminalController.getSshProfiles.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.getSshProfiles.bind(terminalController)));
 
   fastify.get('/ssh/profiles/:id', {
     preHandler: fastify.authenticate,
@@ -66,7 +75,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
         required: ['id']
       }
     }
-  }, terminalController.getSshProfile.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.getSshProfile.bind(terminalController)));
 
   fastify.put('/ssh/profiles/:id', {
     preHandler: fastify.authenticate,
@@ -82,7 +91,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
         required: ['id']
       }
     }
-  }, terminalController.updateSshProfile.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.updateSshProfile.bind(terminalController)));
 
   fastify.delete('/ssh/profiles/:id', {
     preHandler: fastify.authenticate,
@@ -98,7 +107,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
         required: ['id']
       }
     }
-  }, terminalController.deleteSshProfile.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.deleteSshProfile.bind(terminalController)));
 
   fastify.post('/ssh/test-connection', {
     preHandler: fastify.authenticate,
@@ -107,7 +116,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
       summary: 'Test SSH connection',
       description: 'Test SSH connection without saving the profile'
     }
-  }, terminalController.testSshConnection.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.testSshConnection.bind(terminalController)));
 
   // Terminal Session Management Routes
   fastify.post('/terminal/sessions', {
@@ -120,7 +129,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
       summary: 'Create terminal session',
       description: 'Create a new terminal session (local or SSH)'
     }
-  }, terminalController.createTerminalSession.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.createTerminalSession.bind(terminalController)));
 
   fastify.get('/terminal/sessions', {
     preHandler: fastify.authenticate,
@@ -129,7 +138,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
       summary: 'List terminal sessions',
       description: 'Get all terminal sessions for the authenticated user'
     }
-  }, terminalController.getTerminalSessions.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.getTerminalSessions.bind(terminalController)));
 
   fastify.get('/terminal/sessions/:id', {
     preHandler: fastify.authenticate,
@@ -145,7 +154,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
         required: ['id']
       }
     }
-  }, terminalController.getTerminalSession.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.getTerminalSession.bind(terminalController)));
 
   fastify.delete('/terminal/sessions/:id', {
     preHandler: fastify.authenticate,
@@ -161,7 +170,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
         required: ['id']
       }
     }
-  }, terminalController.deleteTerminalSession.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.deleteTerminalSession.bind(terminalController)));
 
   fastify.get('/terminal/sessions/:id/history', {
     preHandler: fastify.authenticate,
@@ -177,7 +186,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
         required: ['id']
       }
     }
-  }, terminalController.getCommandHistory.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.getCommandHistory.bind(terminalController)));
 
   // Terminal Statistics Route
   fastify.get('/terminal/stats', {
@@ -187,5 +196,5 @@ export async function terminalRoutes(fastify: FastifyInstance) {
       summary: 'Get terminal statistics',
       description: 'Get current terminal connection and session statistics'
     }
-  }, terminalController.getTerminalStats.bind(terminalController));
+  }, wrapAuthenticatedHandler(terminalController.getTerminalStats.bind(terminalController)));
 }

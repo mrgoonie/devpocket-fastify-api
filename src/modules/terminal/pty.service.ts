@@ -1,11 +1,13 @@
 // Temporary stub for pty service to allow compilation
 // TODO: Fix node-pty integration issues
 
+import { ReadWriteStream } from 'stream';
+
 export interface PtySession {
   id: string;
   userId: string;
   profileId?: string;
-  ptyProcess: import('stream').ReadWriteStream | null; // Better type for PTY process
+  ptyProcess: ReadWriteStream | null; // Better type for PTY process
   isActive: boolean;
   createdAt: Date;
   lastActivity: Date;

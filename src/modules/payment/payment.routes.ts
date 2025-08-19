@@ -11,7 +11,7 @@ export async function paymentRoutes(
   const paymentController = new PaymentController(paymentService);
 
   // Helper function to wrap authenticated route handlers
-  const wrapAuthenticatedHandler = (handler: (request: AuthenticatedRequest, reply: FastifyReply) => Promise<void>) => {
+  const wrapAuthenticatedHandler = (handler: (_request: AuthenticatedRequest, _reply: FastifyReply) => Promise<void>) => {
     return async (request: FastifyRequest, reply: FastifyReply) => {
       return handler(request as AuthenticatedRequest, reply);
     };

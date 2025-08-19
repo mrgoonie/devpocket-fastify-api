@@ -17,7 +17,7 @@ export async function setupRoutes(fastify: FastifyInstance) {
       const { terminalRoutes } = await import('@/modules/terminal/terminal.routes.js');
       await fastify.register(terminalRoutes);
     } catch (error) {
-      fastify.log.warn('Terminal routes not available:', error.message);
+      fastify.log.warn(`Terminal routes not available: ${error instanceof Error ? error.message : String(error)}`);
     }
     
     // Payment routes (includes subscriptions and webhooks)

@@ -11,7 +11,7 @@ export class HealthController {
     try {
       const healthStatus = await this.healthService.getHealthStatus();
       
-      const statusCode = healthStatus.status === 'ok' ? 200 : 503;
+      const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
       
       reply.code(statusCode).send(healthStatus);
     } catch (error) {
