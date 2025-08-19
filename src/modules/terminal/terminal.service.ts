@@ -3,7 +3,7 @@ import { encryptionService } from '../../shared/encryption/encryption.service.js
 import { sshConnectionManager } from './ssh.service.js';
 import { ptyManager } from './pty.service.js';
 import { logger } from '../../shared/logger.js';
-import { AuthType, SessionStatus } from '@prisma/client';
+import { AuthType, SessionStatus, SshProfile, TerminalSession } from '@prisma/client';
 import { 
   CreateSshProfileRequest, 
   UpdateSshProfileRequest,
@@ -200,7 +200,7 @@ export class TerminalService {
       }
 
       // Update profile basic info
-      const updateData: any = {};
+      const updateData: Partial<Pick<SshProfile, 'name' | 'host' | 'port' | 'username' | 'auth_type'>> = {};
       if (data.name !== undefined) updateData.name = data.name;
       if (data.host !== undefined) updateData.host = data.host;
       if (data.port !== undefined) updateData.port = data.port;
@@ -258,7 +258,11 @@ export class TerminalService {
         }
       });
 
-      return this.formatSshProfileResponse(finalProfile!, finalProfile!.ssh_keys.length > 0);
+      if (!finalProfile) {
+        throw new Error('Failed to retrieve updated SSH profile');
+      }
+      
+      return this.formatSshProfileResponse(finalProfile, finalProfile.ssh_keys.length > 0);
 
     } catch (error) {
       logger.error(`Error updating SSH profile ${profileId}:`, error);
@@ -541,7 +545,7 @@ export class TerminalService {
    * @param hasSshKey - Whether profile has SSH key
    * @returns Formatted response
    */
-  private formatSshProfileResponse(profile: any, hasSshKey: boolean): SshProfileResponse {
+  private formatSshProfileResponse(profile: SshProfile, hasSshKey: boolean): SshProfileResponse {
     return {
       id: profile.id,
       name: profile.name,
@@ -560,7 +564,7 @@ export class TerminalService {
    * @param session - Raw session data
    * @returns Formatted response
    */
-  private formatTerminalSessionResponse(session: any): TerminalSessionResponse {
+  private formatTerminalSessionResponse(session: TerminalSession): TerminalSessionResponse {
     return {
       id: session.id,
       session_id: session.session_id,

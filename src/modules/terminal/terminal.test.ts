@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import { build } from '../../tests/helper.js';
+import { cleanupTestData } from '../../tests/setup.js';
 import { prisma } from '../../shared/database/client.js';
 import { encryptionService } from '../../shared/encryption/encryption.service.js';
 import { AuthType, SessionStatus } from '@prisma/client';
@@ -26,12 +27,7 @@ describe('Terminal Module Integration Tests', () => {
 
   beforeEach(async () => {
     // Clean up test data
-    await prisma.commandHistory.deleteMany();
-    await prisma.terminalSession.deleteMany();
-    await prisma.sshKey.deleteMany();
-    await prisma.sshProfile.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.user.deleteMany();
+    await cleanupTestData();
 
     // Create test user
     const registerResponse = await app.inject({
@@ -64,10 +60,7 @@ describe('Terminal Module Integration Tests', () => {
 
   afterEach(async () => {
     // Clean up test data after each test
-    await prisma.commandHistory.deleteMany();
-    await prisma.terminalSession.deleteMany();
-    await prisma.sshKey.deleteMany();
-    await prisma.sshProfile.deleteMany();
+    await cleanupTestData();
   });
 
   describe('SSH Profile Management', () => {

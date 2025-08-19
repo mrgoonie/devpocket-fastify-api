@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { buildApp } from '@/app.js';
+import { cleanupTestData } from '@/tests/setup.js';
 import { prisma } from '@/shared/database/client.js';
 
 describe('Authentication Module', () => {
@@ -13,29 +14,15 @@ describe('Authentication Module', () => {
   beforeAll(async () => {
     app = await buildApp();
     await app.ready();
-    
-    // Clean up any existing test data
-    await prisma.user.deleteMany({
-      where: { email: testUser.email },
-    });
-  });
-
-  afterAll(async () => {
-    // Clean up test data
-    await prisma.user.deleteMany({
-      where: { email: testUser.email },
-    });
-    await app.close();
   });
 
   beforeEach(async () => {
-    // Clean up between tests
-    await prisma.session.deleteMany();
-    await prisma.passwordResetToken.deleteMany();
-    await prisma.emailVerificationToken.deleteMany();
-    await prisma.user.deleteMany({
-      where: { email: testUser.email },
-    });
+    // Clean up test data before each test
+    await cleanupTestData();
+  });
+
+  afterAll(async () => {
+    await app.close();
   });
 
   describe('POST /api/v1/auth/register', () => {

@@ -9,7 +9,7 @@ export async function terminalRoutes(fastify: FastifyInstance) {
   const paymentService = new PaymentService(fastify.prisma);
 
   // Helper function to wrap authenticated middleware
-  const wrapAuthenticatedMiddleware = (middleware: (request: AuthenticatedRequest, reply: FastifyReply) => Promise<any>) => {
+  const wrapAuthenticatedMiddleware = (middleware: (request: AuthenticatedRequest, reply: FastifyReply) => Promise<void>) => {
     return async (request: FastifyRequest, reply: FastifyReply) => {
       return middleware(request as AuthenticatedRequest, reply);
     };

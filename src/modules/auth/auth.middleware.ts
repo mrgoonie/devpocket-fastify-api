@@ -86,7 +86,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     };
 
     // Also set user property for compatibility
-    (request as any).user = {
+    (request as AuthenticatedRequest).user = {
       id: decoded.userId,
       email: decoded.email,
       sessionId: decoded.sessionId,
@@ -153,7 +153,7 @@ export async function optionalAuthenticate(request: FastifyRequest) {
       };
 
       // Also set user property for compatibility
-      (request as any).user = {
+      (request as AuthenticatedRequest).user = {
         id: decoded.userId,
         email: decoded.email,
         sessionId: decoded.sessionId,

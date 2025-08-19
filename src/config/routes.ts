@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
 import { paymentRoutes } from '@/modules/payment/payment.routes.js';
 import { healthRoutes } from '@/shared/health/health.routes.js';
-import { config } from '@/config/environment.js';
 
 export async function setupRoutes(fastify: FastifyInstance) {
   // Health routes (no prefix, available at root)

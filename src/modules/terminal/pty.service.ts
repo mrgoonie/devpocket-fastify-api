@@ -5,7 +5,7 @@ export interface PtySession {
   id: string;
   userId: string;
   profileId?: string;
-  ptyProcess: any;
+  ptyProcess: import('stream').ReadWriteStream | null; // Better type for PTY process
   isActive: boolean;
   createdAt: Date;
   lastActivity: Date;

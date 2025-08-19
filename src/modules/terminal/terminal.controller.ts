@@ -1,4 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { AuthenticatedRequest } from '../auth/auth.middleware.js';
 import { ptyManager } from './pty.service.js';
 import { sshConnectionManager } from './ssh.service.js';
 import { terminalService } from './terminal.service.js';
@@ -20,13 +21,13 @@ export class TerminalController {
    * @route POST /api/v1/ssh/profiles
    */
   async createSshProfile(
-    request: FastifyRequest<{
+    request: AuthenticatedRequest & {
       Body: unknown;
-    }>,
+    },
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       const data = CreateSshProfileSchema.parse(request.body);
 
       const profile = await terminalService.createSshProfile(userId, data);
@@ -58,11 +59,11 @@ export class TerminalController {
    * @route GET /api/v1/ssh/profiles
    */
   async getSshProfiles(
-    request: FastifyRequest,
+    request: AuthenticatedRequest,
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       const profiles = await terminalService.getUserSshProfiles(userId);
 
       reply.send({
@@ -84,13 +85,13 @@ export class TerminalController {
    * @route GET /api/v1/ssh/profiles/:id
    */
   async getSshProfile(
-    request: FastifyRequest<{
+    request: AuthenticatedRequest & {
       Params: unknown;
-    }>,
+    },
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       const { id } = SshProfileParamsSchema.parse(request.params);
 
       const profile = await terminalService.getSshProfile(id, userId);
@@ -122,14 +123,14 @@ export class TerminalController {
    * @route PUT /api/v1/ssh/profiles/:id
    */
   async updateSshProfile(
-    request: FastifyRequest<{
+    request: AuthenticatedRequest & {
       Params: unknown;
       Body: unknown;
-    }>,
+    },
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       const { id } = SshProfileParamsSchema.parse(request.params);
       const data = UpdateSshProfileSchema.parse(request.body);
 
@@ -167,13 +168,13 @@ export class TerminalController {
    * @route DELETE /api/v1/ssh/profiles/:id
    */
   async deleteSshProfile(
-    request: FastifyRequest<{
+    request: AuthenticatedRequest & {
       Params: unknown;
-    }>,
+    },
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       const { id } = SshProfileParamsSchema.parse(request.params);
 
       await terminalService.deleteSshProfile(id, userId);
@@ -230,13 +231,13 @@ export class TerminalController {
    * @route POST /api/v1/terminal/sessions
    */
   async createTerminalSession(
-    request: FastifyRequest<{
+    request: AuthenticatedRequest & {
       Body: unknown;
-    }>,
+    },
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       const data = CreateTerminalSessionSchema.parse(request.body);
 
       const session = await terminalService.createTerminalSession(userId, data);
@@ -268,11 +269,11 @@ export class TerminalController {
    * @route GET /api/v1/terminal/sessions
    */
   async getTerminalSessions(
-    request: FastifyRequest,
+    request: AuthenticatedRequest,
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       const sessions = await terminalService.getUserTerminalSessions(userId);
 
       reply.send({
@@ -294,13 +295,13 @@ export class TerminalController {
    * @route GET /api/v1/terminal/sessions/:id
    */
   async getTerminalSession(
-    request: FastifyRequest<{
+    request: AuthenticatedRequest & {
       Params: unknown;
-    }>,
+    },
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       const { id } = TerminalSessionParamsSchema.parse(request.params);
 
       const session = await terminalService.getTerminalSession(id, userId);
@@ -332,13 +333,13 @@ export class TerminalController {
    * @route DELETE /api/v1/terminal/sessions/:id
    */
   async deleteTerminalSession(
-    request: FastifyRequest<{
+    request: AuthenticatedRequest & {
       Params: unknown;
-    }>,
+    },
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       const { id } = TerminalSessionParamsSchema.parse(request.params);
 
       await terminalService.deleteTerminalSession(id, userId);
@@ -367,14 +368,14 @@ export class TerminalController {
    * @route GET /api/v1/terminal/sessions/:id/history
    */
   async getCommandHistory(
-    request: FastifyRequest<{
+    request: AuthenticatedRequest & {
       Params: unknown;
       Querystring: unknown;
-    }>,
+    },
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       const { id } = TerminalSessionParamsSchema.parse(request.params);
       const { limit, offset } = GetCommandHistoryQuerySchema.parse(request.query);
 
@@ -407,11 +408,11 @@ export class TerminalController {
    * @route GET /api/v1/terminal/stats
    */
   async getTerminalStats(
-    request: FastifyRequest,
+    request: AuthenticatedRequest,
     reply: FastifyReply
   ): Promise<void> {
     try {
-      const userId = request.authUser!.userId;
+      const userId = request.authUser.userId;
       
       // Get PTY session stats
       const ptyStats = ptyManager.getSessionStats(userId);

@@ -2,7 +2,7 @@ import { Client, ClientChannel } from 'ssh2';
 import { EventEmitter } from 'events';
 import { encryptionService } from '../../shared/encryption/encryption.service.js';
 import { prisma } from '../../shared/database/client.js';
-import { AuthType, SshProfile } from '@prisma/client';
+import { AuthType, SshProfile, SshKey } from '@prisma/client';
 import { logger } from '../../shared/logger.js';
 
 export interface SshConnectionConfig {
@@ -36,7 +36,7 @@ export class SshConnectionManager extends EventEmitter {
   private readonly maxConnections = 10; // Max connections per user
   private readonly connectionTimeout = 30000; // 30 seconds
   private readonly idleTimeout = 300000; // 5 minutes
-  private cleanupInterval: NodeJS.Timeout;
+  private cleanupInterval: ReturnType<typeof setInterval>;
 
   constructor() {
     super();
@@ -201,7 +201,7 @@ export class SshConnectionManager extends EventEmitter {
           resolved = true;
           try {
             testClient.end();
-          } catch (error) {
+          } catch (_error) {
             // Ignore cleanup errors
           }
         }
@@ -337,7 +337,7 @@ export class SshConnectionManager extends EventEmitter {
    * @param userId - User ID for security validation
    * @returns SSH profile with keys
    */
-  private async getProfileWithKeys(profileId: string, userId: string): Promise<SshProfile & { ssh_keys: any[] }> {
+  private async getProfileWithKeys(profileId: string, userId: string): Promise<SshProfile & { ssh_keys: SshKey[] }> {
     const profile = await prisma.sshProfile.findFirst({
       where: {
         id: profileId,
@@ -360,7 +360,7 @@ export class SshConnectionManager extends EventEmitter {
    * @param profile - SSH profile with keys
    * @returns SSH connection configuration
    */
-  private async buildConnectionConfig(profile: SshProfile & { ssh_keys: any[] }): Promise<SshConnectionConfig> {
+  private async buildConnectionConfig(profile: SshProfile & { ssh_keys: SshKey[] }): Promise<SshConnectionConfig> {
     const config: SshConnectionConfig = {
       host: profile.host,
       port: profile.port,
@@ -387,7 +387,7 @@ export class SshConnectionManager extends EventEmitter {
         if (profile.auth_type === AuthType.SSH_KEY_WITH_PASSPHRASE && sshKey.passphrase_encrypted) {
           config.passphrase = encryptionService.decryptPassphrase(sshKey.passphrase_encrypted);
         }
-      } catch (error) {
+      } catch (_error) {
         throw new Error('Failed to decrypt SSH key or passphrase');
       }
     }
