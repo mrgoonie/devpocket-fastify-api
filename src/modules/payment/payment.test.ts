@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import { createTestApp, createTestUserAndLogin } from '@/tests/helper.js';
-import { setupTestDatabase } from '@/tests/db.js';
 import { prisma } from '@/shared/database/client.js';
 import { UserResponse } from '../auth/auth.schema.js';
 import { PlanInfo } from './payment.schema.js';
@@ -103,12 +102,13 @@ describe('Payment Module', () => {
   let authToken: string;
 
   beforeAll(async () => {
-    await setupTestDatabase();
     app = await createTestApp();
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   describe('Authenticated Routes', () => {

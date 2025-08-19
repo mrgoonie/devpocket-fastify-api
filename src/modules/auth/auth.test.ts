@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import { faker } from '@faker-js/faker';
-import { setupTestDatabase } from '@/tests/db.js';
 import { createTestApp, createTestUserAndLogin } from '@/tests/helper.js';
 import { prisma } from '@/shared/database/client.js';
 import { UserResponse } from './auth.schema.js';
@@ -40,12 +39,13 @@ describe('Authentication Module', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    await setupTestDatabase();
     app = await createTestApp();
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   describe('POST /api/v1/auth/register', () => {

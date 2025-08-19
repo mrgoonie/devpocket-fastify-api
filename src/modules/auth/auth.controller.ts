@@ -82,9 +82,10 @@ export class AuthController {
 
   // Login user
   static async login(request: FastifyRequest, reply: FastifyReply) {
+    let input: LoginInput | undefined;
     try {
       // Validate input
-      const input = loginSchema.parse(request.body) as LoginInput;
+      input = loginSchema.parse(request.body) as LoginInput;
 
       // Authenticate user
       const { user, session } = await AuthService.login(input);
@@ -114,7 +115,12 @@ export class AuthController {
         },
       });
     } catch (error) {
-      logger.error('Login error:', error);
+      logger.error('Login error details:', {
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined,
+        input: input ? { email: input.email, hasPassword: !!input.password } : 'undefined',
+        requestBody: request.body
+      });
       
       if (error instanceof Error && error.message.includes('Invalid email or password')) {
         reply.status(401).send({

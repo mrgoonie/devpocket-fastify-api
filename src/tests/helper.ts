@@ -4,15 +4,37 @@ import { faker } from '@faker-js/faker';
 import { buildApp } from '../app.js';
 import { UserResponse } from '../modules/auth/auth.schema.js';
 
+// Track test app instances for proper cleanup
+const testAppInstances = new Set<FastifyInstance>();
+
 export async function build(): Promise<FastifyInstance> {
   const app = await buildApp();
   return app;
 }
 
 export async function createTestApp(): Promise<FastifyInstance> {
+  // Create completely isolated Fastify instance
   const app = await buildApp();
   await app.ready();
+  
+  // Track instance for cleanup
+  testAppInstances.add(app);
+  
   return app;
+}
+
+// Clean up all test app instances
+export async function cleanupTestApps(): Promise<void> {
+  const cleanupPromises = Array.from(testAppInstances).map(async (app) => {
+    try {
+      await app.close();
+    } catch (_) {
+      // Ignore cleanup errors
+    }
+  });
+  
+  await Promise.all(cleanupPromises);
+  testAppInstances.clear();
 }
 
 // Helper to create a test user and get authentication token
@@ -45,6 +67,9 @@ export const createTestUserAndLogin = async (
       `Failed to register test user: ${registerResponse.statusCode} - ${registerResponse.body}`,
     );
   }
+
+  // Small delay to ensure user is properly persisted before login
+  await new Promise(resolve => setTimeout(resolve, 50));
 
   // Login user
   const loginResponse = await app.inject({

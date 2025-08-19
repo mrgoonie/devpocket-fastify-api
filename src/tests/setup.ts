@@ -2,14 +2,14 @@
 import { config } from 'dotenv';
 import path from 'path';
 
-// Set environment variables for testing
-const workerId = process.env.VITEST_WORKER_ID || '1';
-const baseDatabaseUrl = 'postgresql://devpocket_test:devpocket_test@localhost:5432';
-const databaseName = `devpocket-fastify-api-test-${workerId}`;
+// // Set environment variables for testing
+// const workerId = process.env.VITEST_WORKER_ID || '1';
+// const baseDatabaseUrl = 'postgresql://devpocket_test:devpocket_test@localhost:5432';
+// const databaseName = `devpocket-fastify-api-test-${workerId}`;
 
-process.env.DATABASE_URL = `${baseDatabaseUrl}/${databaseName}`;
-// Use a different Redis database for each worker to avoid conflicts
-process.env.REDIS_URL = `redis://localhost:6379/${workerId}`;
+// process.env.DATABASE_URL = `${baseDatabaseUrl}/${databaseName}`;
+// // Use a different Redis database for each worker to avoid conflicts
+// process.env.REDIS_URL = `redis://localhost:6379/${workerId}`;
 
 // Load any other environment variables from .env.test if it exists
 config({ path: path.resolve(process.cwd(), '.env.test') });
@@ -23,7 +23,7 @@ vi.mock('@/shared/email/email.service.js', () => ({
   },
 }));
 
-import { afterAll, afterEach } from 'vitest';
+import { afterAll, afterEach, beforeAll } from 'vitest';
 import { logger } from '@/shared/logger.js';
 import { prisma, disconnectDatabase } from '@/shared/database/client.js';
 
@@ -32,10 +32,34 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// Setup test environment with server instance isolation
+beforeAll(async () => {
+  try {
+    logger.info('Resetting database for test suite...');
+    await resetDatabase();
+    logger.info('Database reset complete');
+    
+    // Clean up any existing Fastify instances to prevent plugin conflicts
+    const { cleanupTestApps } = await import('@/tests/helper.js');
+    await cleanupTestApps();
+    
+    // Longer delay to ensure database and server cleanup is complete
+    await new Promise(resolve => setTimeout(resolve, 500));
+  } catch (error) {
+    logger.error('Failed to setup test environment:', error);
+    throw error;
+  }
+}, 60000); // 60 second timeout
+
 // Global test cleanup
 afterAll(async () => {
   try {
     logger.info('Cleaning up test environment...');
+    
+    // Clean up any remaining Fastify instances
+    const { cleanupTestApps } = await import('@/tests/helper.js');
+    await cleanupTestApps();
+    
     await disconnectDatabase();
     logger.info('Test environment cleanup complete');
   } catch (error) {
@@ -43,110 +67,56 @@ afterAll(async () => {
   }
 });
 
-// Mutex to prevent concurrent cleanups
-let cleanupMutex: Promise<void> = Promise.resolve();
+// Global mutex to prevent concurrent database operations across all test files
+let globalDatabaseMutex: Promise<void> = Promise.resolve();
 
-// Helper function for tests to clean up their data
-export async function cleanupTestData(): Promise<void> {
-  // Wait for any previous cleanup to complete
-  await cleanupMutex;
-  
-  // Create new cleanup promise
-  cleanupMutex = cleanupTestDataInternal();
-  
-  // Wait for this cleanup to complete
-  await cleanupMutex;
+// Complete database reset function for test isolation
+export async function resetDatabase(): Promise<void> {
+  await globalDatabaseMutex;
+  globalDatabaseMutex = resetDatabaseInternal();
+  await globalDatabaseMutex;
 }
 
-async function cleanupTestDataInternal(): Promise<void> {
-  const maxRetries = 3;
-  let attempt = 0;
 
-  while (attempt < maxRetries) {
-    try {
-      attempt++;
+async function resetDatabaseInternal(): Promise<void> {
+  try {
+    logger.debug('Starting complete database reset...');
+    
+    // Drop all data and reset sequences
+    await prisma.$transaction(async (tx) => {
+      // Disable foreign key checks temporarily
+      await tx.$executeRawUnsafe('SET session_replication_role = replica;');
       
-      // Use a transaction for atomic cleanup
-      await prisma.$transaction(async (tx) => {
-        // First, check if tables exist
-        const existingTables = await tx.$queryRaw<Array<{ tablename: string }>>`
-          SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != '_prisma_migrations'
-        `;
-        
-        const tableNames = existingTables.map(t => t.tablename);
-        
-        if (tableNames.length === 0) {
-          logger.debug('No tables found for cleanup - database might not be initialized');
-          return;
-        }
-        
-        // Clean up test data in correct order to respect foreign key constraints
-        // Child tables first, then parent tables
-        const cleanupOrder = [
-          'command_history',      // References terminal_sessions
-          'ssh_keys',            // References ssh_profiles  
-          'terminal_sessions',   // References users, ssh_profiles
-          'email_verification_tokens', // References users
-          'password_reset_tokens',     // References users
-          'sessions',            // References users
-          'invoices',           // References subscriptions
-          'payment_history',    // References users
-          'usage_limits',       // References users  
-          'subscriptions',      // References users
-          'ssh_profiles',       // References users
-          'users'              // No dependencies
-        ];
-
-        // Only clean tables that actually exist
-        const tablesToClean = cleanupOrder.filter(table => tableNames.includes(table));
-        
-        if (tablesToClean.length === 0) {
-          logger.debug('No known tables found for cleanup');
-          return;
-        }
-
-        logger.debug(`Cleaning up ${tablesToClean.length} tables: ${tablesToClean.join(', ')}`);
-
-        // Delete records in the correct order (respecting foreign keys)
-        for (const tableName of tablesToClean) {
-          try {
-            await tx.$executeRawUnsafe(`DELETE FROM "${tableName}"`);
-            logger.debug(`Cleaned table ${tableName}`);
-          } catch (error) {
-            logger.debug(`Could not clean table ${tableName}:`, error);
-            // For some tables this might be expected, so continue
-          }
-        }
-
-        // Reset sequences to ensure clean IDs for next tests
-        for (const tableName of tablesToClean) {
-          try {
-            await tx.$executeRawUnsafe(`
-              SELECT setval(pg_get_serial_sequence('"${tableName}"', 'id'), 1, false) 
-              WHERE pg_get_serial_sequence('"${tableName}"', 'id') IS NOT NULL
-            `);
-          } catch (error) {
-            // Some tables might not have serial sequences, ignore
-            logger.debug(`Could not reset sequence for ${tableName}:`, error);
-          }
-        }
-      }, {
-        timeout: 10000, // 10 second timeout for cleanup transaction
-      });
-
-      logger.debug('Test data cleanup completed successfully');
-      return; // Success, exit retry loop
+      // Get all table names (excluding system tables)
+      const tables = await tx.$queryRaw<Array<{ tablename: string }>>`
+        SELECT tablename FROM pg_tables 
+        WHERE schemaname = 'public' 
+        AND tablename NOT LIKE 'pg_%' 
+        AND tablename != '_prisma_migrations'
+      `;
       
-    } catch (error) {
-      logger.warn(`Test cleanup attempt ${attempt}/${maxRetries} failed:`, error);
-      
-      if (attempt === maxRetries) {
-        logger.error('All cleanup attempts failed, continuing anyway');
-        return;
+      // Truncate all tables
+      for (const { tablename } of tables) {
+        await tx.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" RESTART IDENTITY CASCADE;`);
       }
       
-      // Wait a bit before retrying
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
+      // Re-enable foreign key checks
+      await tx.$executeRawUnsafe('SET session_replication_role = DEFAULT;');
+    }, {
+      timeout: 30000, // 30 second timeout
+    });
+    
+    logger.debug('Database reset completed successfully');
+    
+  } catch (error) {
+    logger.error('Database reset failed:', error);
+    throw error;
   }
+}
+
+// Helper function for tests to clean up their data (disabled to prevent race conditions)
+export async function cleanupTestData(): Promise<void> {
+  // Completely disabled to prevent foreign key violations during test execution
+  // Database is only reset once per test file at the beginning
+  return Promise.resolve();
 }

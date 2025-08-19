@@ -157,14 +157,26 @@ export class AuthService {
       // Create refresh token
       const refreshToken = this.generateSecureToken();
       
-      // Create session
-      const session = await prisma.session.create({
-        data: {
-          user_id: user.id,
-          token: refreshToken,
-          device_id: input.device_id,
-          expires_at: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_MS),
-        },
+      // Create session with transaction to ensure atomicity
+      const session = await prisma.$transaction(async (tx) => {
+        // Verify user still exists before creating session
+        const existingUser = await tx.user.findUnique({
+          where: { id: user.id }
+        });
+        
+        if (!existingUser) {
+          throw new Error('User not found during session creation');
+        }
+        
+        // Create session
+        return await tx.session.create({
+          data: {
+            user_id: user.id,
+            token: refreshToken,
+            device_id: input.device_id,
+            expires_at: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_MS),
+          },
+        });
       });
 
       logger.info(`User logged in: ${user.email}`, { 

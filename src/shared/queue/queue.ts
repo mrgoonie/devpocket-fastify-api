@@ -1,12 +1,10 @@
 import { Queue, QueueEvents } from 'bullmq';
-import IORedis from 'ioredis';
 import { config } from '@/config/environment.js';
 import { logger } from '@/shared/logger.js';
+import { createRedisConnectionForQueue } from '@/shared/redis/redis-connection.js';
 
 // Redis connection for BullMQ
-const connection = new IORedis(config.REDIS_URL, {
-  maxRetriesPerRequest: null,
-});
+const connection = createRedisConnectionForQueue(config.REDIS_URL);
 
 // Email queue for async email processing
 export const emailQueue = new Queue('email', {

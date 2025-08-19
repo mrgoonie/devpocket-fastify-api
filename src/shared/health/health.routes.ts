@@ -1,11 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { HealthService } from './health.service.js';
 import { HealthController } from './health.controller.js';
-import Redis from 'ioredis';
+import { createRedisConnection } from '@/shared/redis/redis-connection.js';
+import { config } from '@/config/environment.js';
 
 export async function healthRoutes(fastify: FastifyInstance) {
-  // Initialize health service
-  const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+  // Initialize health service with flexible Redis connection
+  const redis = createRedisConnection(config.REDIS_URL);
   const healthService = new HealthService(fastify.prisma, redis);
   const healthController = new HealthController(healthService);
 
