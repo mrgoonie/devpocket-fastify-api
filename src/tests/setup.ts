@@ -99,60 +99,75 @@ afterAll(async () => {
 // Helper function for tests to clean up their data
 export async function cleanupTestData(): Promise<void> {
   try {
-    // First, check if tables exist
-    const existingTables = await prisma.$queryRaw<Array<{ tablename: string }>>`
-      SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != '_prisma_migrations'
-    `;
-    
-    const tableNames = existingTables.map(t => t.tablename);
-    
-    if (tableNames.length === 0) {
-      logger.debug('No tables found for cleanup - database might not be initialized');
-      return;
-    }
-    
-    // Clean up test data in order to respect foreign key constraints
-    // This order ensures child tables are cleaned before parent tables
-    const cleanupOrder = [
-      'command_history',
-      'email_verification_tokens', 
-      'password_reset_tokens',
-      'payment_history',
-      'invoices',
-      'ssh_keys',
-      'terminal_sessions',
-      'sessions',
-      'usage_limits',
-      'subscriptions',
-      'ssh_profiles',
-      'users'
-    ];
+    // Use a transaction to ensure atomicity
+    await prisma.$transaction(async (tx) => {
+      // Clean up test data in order to respect foreign key constraints
+      // This order ensures child tables are cleaned before parent tables
+      const deleteOperations = [
+        () => tx.commandHistory.deleteMany(),
+        () => tx.emailVerificationToken.deleteMany(),
+        () => tx.passwordResetToken.deleteMany(),
+        () => tx.paymentHistory.deleteMany(),
+        () => tx.invoice.deleteMany(),
+        () => tx.sshKey.deleteMany(),
+        () => tx.terminalSession.deleteMany(),
+        () => tx.session.deleteMany(),
+        () => tx.usageLimits.deleteMany(),
+        () => tx.subscription.deleteMany(),
+        () => tx.sshProfile.deleteMany(),
+        () => tx.user.deleteMany(),
+      ];
 
-    // Only clean tables that actually exist
-    const tablesToClean = cleanupOrder.filter(table => tableNames.includes(table));
-    
-    if (tablesToClean.length === 0) {
-      logger.debug('No known tables found for cleanup');
-      return;
-    }
-
-    // Disable foreign key checks temporarily for faster cleanup
-    await prisma.$executeRaw`SET session_replication_role = replica;`;
-    
-    for (const tableName of tablesToClean) {
-      try {
-        await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${tableName}" RESTART IDENTITY CASCADE;`);
-      } catch (error) {
-        // Log but continue - table might have been dropped
-        logger.debug(`Could not truncate table ${tableName}:`, error);
+      // Execute deletions in order
+      for (const deleteOp of deleteOperations) {
+        try {
+          await deleteOp();
+        } catch (error) {
+          // Log but continue - table/model might not exist
+          logger.debug(`Could not clean up table:`, error);
+        }
       }
-    }
+    }, {
+      timeout: 30000, // 30 second timeout
+    });
     
-    // Re-enable foreign key checks
-    await prisma.$executeRaw`SET session_replication_role = DEFAULT;`;
-    
+    // Small delay to ensure cleanup is complete
+    await new Promise(resolve => setTimeout(resolve, 50));
   } catch (error) {
     logger.warn('Test cleanup failed:', error);
-    // If all cleanup fails, just continue - tests will handle missing data
+    // If cleanup fails, try a more aggressive approach
+    try {
+      // Disable foreign key checks temporarily
+      await prisma.$executeRaw`SET session_replication_role = replica;`;
+      
+      // Truncate all tables
+      const tables = [
+        'command_history',
+        'email_verification_tokens', 
+        'password_reset_tokens',
+        'payment_history',
+        'invoices',
+        'ssh_keys',
+        'terminal_sessions',
+        'sessions',
+        'usage_limits',
+        'subscriptions',
+        'ssh_profiles',
+        'users'
+      ];
+      
+      for (const table of tables) {
+        try {
+          await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${table}" RESTART IDENTITY CASCADE;`);
+        } catch (err) {
+          // Table might not exist, continue
+        }
+      }
+      
+      // Re-enable foreign key checks
+      await prisma.$executeRaw`SET session_replication_role = DEFAULT;`;
+    } catch (fallbackError) {
+      logger.error('Fallback cleanup also failed:', fallbackError);
+    }
   }
 }

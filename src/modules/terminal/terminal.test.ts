@@ -64,15 +64,19 @@ describe('Terminal Module Integration Tests', () => {
     // Small delay to ensure database is ready
     await new Promise(resolve => setTimeout(resolve, 100));
 
+    // Generate unique test user data
+    const uniqueId = Math.random().toString(36).substring(2, 8); // 6 chars
+    const uniqueTestUser = {
+      email: `terminal-${Date.now()}-${uniqueId}@example.com`,
+      username: `term${uniqueId}`, // Keep under 20 chars
+      password: 'TestPassword123!'
+    };
+
     // Create test user
     const registerResponse = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/register',
-      payload: {
-        email: 'terminal-test@example.com',
-        username: 'terminaluser',
-        password: 'TestPassword123!'
-      }
+      payload: uniqueTestUser
     });
 
     expect(registerResponse.statusCode).toBe(201);
@@ -82,8 +86,8 @@ describe('Terminal Module Integration Tests', () => {
       method: 'POST',
       url: '/api/v1/auth/login',
       payload: {
-        email: 'terminal-test@example.com',
-        password: 'TestPassword123!'
+        email: uniqueTestUser.email,
+        password: uniqueTestUser.password
       }
     });
 

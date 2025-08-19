@@ -11,6 +11,7 @@ describe('Payment Module', () => {
   let prisma: PrismaClient;
   let testUser: User;
   let authToken: string;
+  let uniqueTestUser: { email: string; username: string; password: string };
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -28,23 +29,27 @@ describe('Payment Module', () => {
     // Small delay to ensure database is ready
     await new Promise(resolve => setTimeout(resolve, 100));
     
+    // Generate unique test user data
+    const uniqueId = Math.random().toString(36).substring(2, 8); // 6 chars
+    uniqueTestUser = {
+      email: `payment-${Date.now()}-${uniqueId}@example.com`,
+      username: `pay${uniqueId}`, // Keep under 20 chars
+      password: 'Password123!'
+    };
+    
     // Recreate test user and get fresh auth token
     await app.inject({
       method: 'POST',
       url: '/api/v1/auth/register',
-      payload: {
-        email: 'payment-test@example.com',
-        username: 'paymentuser',
-        password: 'Password123!'
-      }
+      payload: uniqueTestUser
     });
 
     const loginResponse = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',
       payload: {
-        email: 'payment-test@example.com',
-        password: 'Password123!'
+        email: uniqueTestUser.email,
+        password: uniqueTestUser.password
       }
     });
 

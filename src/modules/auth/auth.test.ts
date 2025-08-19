@@ -5,10 +5,16 @@ import { prisma } from '@/shared/database/client.js';
 
 describe('Authentication Module', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
-  const testUser = {
-    email: 'test@example.com',
-    username: 'testuser',
-    password: 'TestPass123',
+  let testUser: ReturnType<typeof getTestUser>;
+
+  // Generate unique test data for each test run
+  const getTestUser = () => {
+    const uniqueId = Math.random().toString(36).substring(2, 8); // 6 chars
+    return {
+      email: `test-${Date.now()}-${uniqueId}@example.com`,
+      username: `user${uniqueId}`, // Keep under 20 chars
+      password: 'TestPassword123!',
+    };
   };
 
   beforeAll(async () => {
@@ -19,6 +25,9 @@ describe('Authentication Module', () => {
   beforeEach(async () => {
     // Clean up test data before each test
     await cleanupTestData();
+    
+    // Generate unique test user for this test
+    testUser = getTestUser();
     
     // Small delay to ensure database is ready
     await new Promise(resolve => setTimeout(resolve, 100));
