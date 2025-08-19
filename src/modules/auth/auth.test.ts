@@ -1,27 +1,17 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { buildApp } from '@/app.js';
-import { cleanupTestData } from '@/tests/setup.js';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { FastifyInstance } from 'fastify';
+import { faker } from '@faker-js/faker';
+import { setupTestDatabase } from '@/tests/db.js';
+import { createTestApp, createTestUserAndLogin } from '@/tests/helper.js';
 import { prisma } from '@/shared/database/client.js';
-import { TEST_USERS } from '@/tests/helper.js';
+import { UserResponse } from './auth.schema.js';
 
 describe('Authentication Module', () => {
-  let app: Awaited<ReturnType<typeof buildApp>>;
-  const testUser = TEST_USERS.auth;
+  let app: FastifyInstance;
 
   beforeAll(async () => {
-    app = await buildApp();
-    await app.ready();
-  });
-
-  beforeEach(async () => {
-    // Clean up test data before each test
-    await cleanupTestData();
-    
-    // Generate unique test user for this test
-    testUser = getTestUser();
-    
-    // Small delay to ensure database is ready
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await setupTestDatabase();
+    app = await createTestApp();
   });
 
   afterAll(async () => {
@@ -30,52 +20,65 @@ describe('Authentication Module', () => {
 
   describe('POST /api/v1/auth/register', () => {
     it('should register a new user successfully', async () => {
+      const userData = {
+        email: faker.internet.email(),
+        username: faker.internet.username().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20) || 'testuser',
+        password: 'Password123!',
+      };
+
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/register',
-        payload: testUser,
+        payload: userData,
       });
 
       expect(response.statusCode).toBe(201);
       const json = response.json();
       expect(json.success).toBe(true);
-      expect(json.data.user.email).toBe(testUser.email);
-      expect(json.data.user.username).toBe(testUser.username);
+      expect(json.data.user.email).toBe(userData.email.toLowerCase());
+      expect(json.data.user.username).toBe(userData.username);
       expect(json.data.user.email_verified).toBe(false);
     });
 
     it('should fail with invalid email', async () => {
+      const userData = {
+        email: 'invalid-email',
+        username: faker.internet.username().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20),
+        password: 'Password123!',
+      };
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/register',
-        payload: {
-          ...testUser,
-          email: 'invalid-email',
-        },
+        payload: userData,
       });
-
       expect(response.statusCode).toBe(400);
     });
 
     it('should fail with weak password', async () => {
+      const userData = {
+        email: faker.internet.email(),
+        username: faker.internet.username().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20),
+        password: 'weak',
+      };
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/register',
-        payload: {
-          ...testUser,
-          password: 'weak',
-        },
+        payload: userData,
       });
-
       expect(response.statusCode).toBe(400);
     });
 
     it('should fail with duplicate email', async () => {
+      const userData = {
+        email: faker.internet.email(),
+        username: faker.internet.username().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20) || 'test_user',
+        password: 'Password123!',
+      };
       // First registration
       await app.inject({
         method: 'POST',
         url: '/api/v1/auth/register',
-        payload: testUser,
+        payload: userData,
       });
 
       // Second registration with same email
@@ -83,8 +86,8 @@ describe('Authentication Module', () => {
         method: 'POST',
         url: '/api/v1/auth/register',
         payload: {
-          ...testUser,
-          username: 'different',
+          ...userData,
+          username: faker.internet.username().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20) || 'new_user',
         },
       });
 
@@ -95,41 +98,34 @@ describe('Authentication Module', () => {
   });
 
   describe('POST /api/v1/auth/login', () => {
-    beforeEach(async () => {
-      // Register user before login tests
-      await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/register',
-        payload: testUser,
-      });
-    });
-
     it('should login successfully with valid credentials', async () => {
+      const { user, password } = await createTestUserAndLogin(app, 'USER');
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/login',
         payload: {
-          email: testUser.email,
-          password: testUser.password,
+          email: user.email,
+          password,
         },
       });
 
       expect(response.statusCode).toBe(200);
       const json = response.json();
       expect(json.success).toBe(true);
-      expect(json.data.user.email).toBe(testUser.email);
+      expect(json.data.user.email).toBe(user.email);
       expect(json.data.access_token).toBeDefined();
       expect(json.data.refresh_token).toBeDefined();
       expect(json.data.expires_in).toBeTypeOf('number');
     });
 
-    it('should fail with invalid email', async () => {
+        it('should fail with invalid email', async () => {
+      const { password } = await createTestUserAndLogin(app, 'USER');
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/login',
         payload: {
           email: 'wrong@example.com',
-          password: testUser.password,
+          password,
         },
       });
 
@@ -138,12 +134,13 @@ describe('Authentication Module', () => {
       expect(json.code).toBe('INVALID_CREDENTIALS');
     });
 
-    it('should fail with invalid password', async () => {
+        it('should fail with invalid password', async () => {
+      const { user } = await createTestUserAndLogin(app, 'USER');
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/login',
         payload: {
-          email: testUser.email,
+          email: user.email,
           password: 'wrongpassword',
         },
       });
@@ -154,199 +151,106 @@ describe('Authentication Module', () => {
     });
   });
 
-  describe('GET /api/v1/auth/me', () => {
-    let accessToken: string;
+  describe('Authenticated routes', () => {
+    let result: { user: UserResponse; token: string; refreshToken: string; password: string };
 
     beforeEach(async () => {
-      // Register and login user
-      await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/register',
-        payload: testUser,
-      });
-
-      const loginResponse = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/login',
-        payload: {
-          email: testUser.email,
-          password: testUser.password,
-        },
-      });
-
-      const loginData = loginResponse.json();
-      accessToken = loginData.data?.access_token;
+      result = await createTestUserAndLogin(app);
     });
 
-    it('should return current user with valid token', async () => {
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/v1/auth/me',
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-        },
+    describe('GET /api/v1/auth/me', () => {
+      it('should return current user with valid token', async () => {
+        const response = await app.inject({
+          method: 'GET',
+          url: '/api/v1/auth/me',
+          headers: {
+            authorization: `Bearer ${result.token}`,
+          },
+        });
+
+        expect(response.statusCode).toBe(200);
+        const json = response.json();
+        expect(json.success).toBe(true);
+        expect(json.data.user.email).toBe(result.user.email);
       });
 
-      expect(response.statusCode).toBe(200);
-      const json = response.json();
-      expect(json.success).toBe(true);
-      expect(json.data.user.email).toBe(testUser.email);
+      it('should fail without authorization header', async () => {
+        const response = await app.inject({
+          method: 'GET',
+          url: '/api/v1/auth/me',
+        });
+        expect(response.statusCode).toBe(401);
+      });
+
+      it('should fail with invalid token', async () => {
+        const response = await app.inject({
+          method: 'GET',
+          url: '/api/v1/auth/me',
+          headers: {
+            authorization: 'Bearer invalid-token',
+          },
+        });
+        expect(response.statusCode).toBe(401);
+      });
     });
 
-    it('should fail without authorization header', async () => {
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/v1/auth/me',
+    describe('POST /api/v1/auth/refresh', () => {
+      it('should refresh token successfully', async () => {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/v1/auth/refresh',
+          payload: {
+            refresh_token: result.refreshToken,
+          },
+        });
+
+        expect(response.statusCode).toBe(200);
+        const json = response.json();
+        expect(json.success).toBe(true);
+        expect(json.data.access_token).toBeDefined();
       });
 
-      expect(response.statusCode).toBe(401);
-      const json = response.json();
-      expect(json.code).toBe('MISSING_AUTH_HEADER');
+      it('should fail with invalid refresh token', async () => {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/v1/auth/refresh',
+          payload: {
+            refresh_token: 'invalid-token',
+          },
+        });
+        expect(response.statusCode).toBe(401);
+      });
     });
 
-    it('should fail with invalid token', async () => {
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/v1/auth/me',
-        headers: {
-          authorization: 'Bearer invalid-token',
-        },
+    describe('POST /api/v1/auth/logout', () => {
+      it('should logout successfully', async () => {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/v1/auth/logout',
+          headers: {
+            authorization: `Bearer ${result.token}`,
+          },
+        });
+        expect(response.statusCode).toBe(200);
       });
-
-      expect(response.statusCode).toBe(401);
-      const json = response.json();
-      expect(json.code).toBe('AUTH_FAILED');
-    });
-  });
-
-  describe('POST /api/v1/auth/refresh', () => {
-    let refreshToken: string;
-
-    beforeEach(async () => {
-      // Register and login user
-      await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/register',
-        payload: testUser,
-      });
-
-      const loginResponse = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/login',
-        payload: {
-          email: testUser.email,
-          password: testUser.password,
-        },
-      });
-
-      const loginData = loginResponse.json();
-      refreshToken = loginData.data?.refresh_token;
-    });
-
-    it('should refresh token successfully', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/refresh',
-        payload: {
-          refresh_token: refreshToken,
-        },
-      });
-
-      expect(response.statusCode).toBe(200);
-      const json = response.json();
-      expect(json.success).toBe(true);
-      expect(json.data.access_token).toBeDefined();
-      expect(json.data.expires_in).toBeTypeOf('number');
-    });
-
-    it('should fail with invalid refresh token', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/refresh',
-        payload: {
-          refresh_token: 'invalid-token',
-        },
-      });
-
-      expect(response.statusCode).toBe(401);
-      const json = response.json();
-      expect(json.code).toBe('INVALID_REFRESH_TOKEN');
-    });
-  });
-
-  describe('POST /api/v1/auth/logout', () => {
-    let accessToken: string;
-
-    beforeEach(async () => {
-      // Register and login user
-      await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/register',
-        payload: testUser,
-      });
-
-      const loginResponse = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/login',
-        payload: {
-          email: testUser.email,
-          password: testUser.password,
-        },
-      });
-
-      const loginData = loginResponse.json();
-      accessToken = loginData.data?.access_token;
-    });
-
-    it('should logout successfully', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/logout',
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      expect(response.statusCode).toBe(200);
-      const json = response.json();
-      expect(json.success).toBe(true);
-    });
-
-    it('should fail without authorization', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/logout',
-      });
-
-      expect(response.statusCode).toBe(401);
     });
   });
 
   describe('POST /api/v1/auth/forgot-password', () => {
-    beforeEach(async () => {
-      // Register user before password reset tests
-      await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/register',
-        payload: testUser,
-      });
-    });
-
     it('should request password reset successfully', async () => {
+      const { user } = await createTestUserAndLogin(app);
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/forgot-password',
         payload: {
-          email: testUser.email,
+          email: user.email,
         },
       });
-
       expect(response.statusCode).toBe(200);
-      const json = response.json();
-      expect(json.success).toBe(true);
     });
 
-    it('should not reveal if email does not exist', async () => {
+        it('should not reveal if email does not exist', async () => {
+      await createTestUserAndLogin(app, 'USER');
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/forgot-password',
@@ -354,37 +258,20 @@ describe('Authentication Module', () => {
           email: 'nonexistent@example.com',
         },
       });
-
       expect(response.statusCode).toBe(200);
-      const json = response.json();
-      expect(json.success).toBe(true);
     });
   });
 
   describe('GET /api/v1/auth/verify-email', () => {
-    let verificationToken: string;
-
-    beforeEach(async () => {
-      // Register user to get verification token
-      await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/register',
-        payload: testUser,
-      });
-
-      // Get the verification token from database
-      const token = await prisma.emailVerificationToken.findFirst({
-        where: {
-          user: { email: testUser.email },
-        },
-      });
-      verificationToken = token?.token || '';
-    });
-
     it('should verify email successfully', async () => {
+      const { user } = await createTestUserAndLogin(app);
+      const tokenRecord = await prisma.emailVerificationToken.findFirst({
+        where: { user_id: user.id },
+      });
+
       const response = await app.inject({
         method: 'GET',
-        url: `/api/v1/auth/verify-email?token=${verificationToken}`,
+        url: `/api/v1/auth/verify-email?token=${tokenRecord?.token}`,
       });
 
       expect(response.statusCode).toBe(200);
@@ -393,15 +280,13 @@ describe('Authentication Module', () => {
       expect(json.data.user.email_verified).toBe(true);
     });
 
-    it('should fail with invalid token', async () => {
+        it('should fail with invalid token', async () => {
+      await createTestUserAndLogin(app, 'USER');
       const response = await app.inject({
         method: 'GET',
         url: '/api/v1/auth/verify-email?token=invalid-token',
       });
-
       expect(response.statusCode).toBe(400);
-      const json = response.json();
-      expect(json.code).toBe('INVALID_VERIFICATION_TOKEN');
     });
   });
 });

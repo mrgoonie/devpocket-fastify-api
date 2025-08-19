@@ -1,5 +1,8 @@
 import { FastifyInstance } from 'fastify';
+import { Response } from 'light-my-request';
+import { faker } from '@faker-js/faker';
 import { buildApp } from '../app.js';
+import { UserResponse } from '../modules/auth/auth.schema.js';
 
 export async function build(): Promise<FastifyInstance> {
   const app = await buildApp();
@@ -12,71 +15,65 @@ export async function createTestApp(): Promise<FastifyInstance> {
   return app;
 }
 
-// Shared test user credentials with unique identifiers to avoid conflicts between test files
-export const TEST_USERS = {
-  auth: {
-    email: 'auth-test@example.com',
-    username: 'authuser',
-    password: 'TestPass123!'
-  },
-  payment: {
-    email: 'payment-test@example.com',
-    username: 'paymentuser', 
-    password: 'Password123!'
-  },
-  terminal: {
-    email: 'terminal-test@example.com',
-    username: 'terminaluser',
-    password: 'TestPassword123!'
-  }
-};
-
 // Helper to create a test user and get authentication token
-export async function createTestUserAndLogin(app: FastifyInstance, userKey: keyof typeof TEST_USERS) {
-  const user = TEST_USERS[userKey];
-  
-  // Register the user
+export const createTestUserAndLogin = async (
+  app: FastifyInstance,
+  role: 'USER' | 'ADMIN' = 'USER',
+): Promise<{ user: UserResponse; token: string; refreshToken: string; password: string }> => {
+  const uniqueId = faker.string.uuid();
+  // Replace hyphen with underscore to match username validation rules
+  const username = `testuser_${uniqueId.replace(/-/g, '_')}`.slice(0, 20);
+  const email = `test-${uniqueId}@example.com`;
+  const password = 'Password123!';
+
+  const userPayload = {
+    username,
+    email,
+    password,
+    role,
+  };
+
+  // Register user
   const registerResponse = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/register',
-    payload: user
+    payload: userPayload,
   });
 
   if (registerResponse.statusCode !== 201) {
-    throw new Error(`Failed to register test user: ${registerResponse.statusCode} - ${registerResponse.payload}`);
+    throw new Error(
+      `Failed to register test user: ${registerResponse.statusCode} - ${registerResponse.body}`,
+    );
   }
 
-  // Login to get token
+  // Login user
   const loginResponse = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/login',
-    payload: {
-      email: user.email,
-      password: user.password
-    }
+    payload: { email, password },
   });
 
   if (loginResponse.statusCode !== 200) {
-    throw new Error(`Failed to login test user: ${loginResponse.statusCode} - ${loginResponse.payload}`);
+    throw new Error(`Failed to login test user: ${loginResponse.statusCode} - ${loginResponse.body}`);
   }
 
-  const loginData = loginResponse.json();
-  
-  return {
-    user: loginData.data.user,
-    token: loginData.data.access_token,
-    refreshToken: loginData.data.refresh_token
-  };
-}
+  const responseBody = JSON.parse(loginResponse.body);
+  // Handle cases where the response might be nested under a 'data' property
+  const loginData = responseBody.data || responseBody;
+
+  const { user, access_token: token, refresh_token: refreshToken } = loginData;
+  return { user, token, refreshToken, password };
+};
+
 
 // Helper to make authenticated requests
 export async function makeAuthenticatedRequest(
-  app: FastifyInstance, 
+  app: FastifyInstance,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
   url: string,
   token: string,
-  payload?: Record<string, unknown>
-) {
+  payload?: Record<string, unknown>,
+): Promise<Response> {
   return app.inject({
     method,
     url,

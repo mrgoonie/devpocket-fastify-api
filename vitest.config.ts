@@ -9,12 +9,11 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{js,ts}'],
     exclude: ['node_modules', 'dist'],
     // Enhanced isolation settings to prevent database conflicts
-    fileParallelism: false, // Run test files sequentially
     maxConcurrency: 1, // Only one test at a time
     isolate: true, // Isolate test processes to prevent shared state
-    pool: 'threads', // Use threads for better resource management
     sequence: {
       shuffle: false, // Run tests in predictable order
+      concurrent: false, // Run test files sequentially
     },
     // Increased timeouts for database operations
     testTimeout: 30000, // 30 seconds per test

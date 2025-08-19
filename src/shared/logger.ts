@@ -2,8 +2,8 @@ import pino from 'pino';
 import { config } from '@/config/environment.js';
 
 export const logger = pino({
-  level: config.isDevelopment ? 'debug' : 'info',
-  transport: config.isDevelopment
+  level: config.isDevelopment || config.isTest ? 'debug' : 'info',
+  transport: config.isDevelopment || config.isTest
     ? {
         target: 'pino-pretty',
         options: {

@@ -3,147 +3,33 @@ import { config } from 'dotenv';
 import path from 'path';
 
 // Set environment variables for testing
-process.env.DATABASE_URL = 'postgresql://devpocket_test:devpocket_test@localhost:5433/devpocket-fastify-api-test';
-process.env.REDIS_URL = 'redis://localhost:6380';
+const workerId = process.env.VITEST_WORKER_ID || '1';
+const baseDatabaseUrl = 'postgresql://devpocket_test:devpocket_test@localhost:5433';
+const databaseName = `devpocket-fastify-api-test-${workerId}`;
+
+process.env.DATABASE_URL = `${baseDatabaseUrl}/${databaseName}`;
+// Use a different Redis database for each worker to avoid conflicts
+process.env.REDIS_URL = `redis://localhost:6380/${workerId}`;
 
 // Load any other environment variables from .env.test if it exists
 config({ path: path.resolve(process.cwd(), '.env.test') });
 
-import { beforeAll, afterAll } from 'vitest';
+// Mock EmailService to prevent actual email sending during tests
+import { vi } from 'vitest';
+vi.mock('@/shared/email/email.service.js', () => ({
+  EmailService: {
+    sendWelcomeEmail: vi.fn().mockResolvedValue(undefined),
+    sendPasswordResetEmail: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+import { afterAll, afterEach } from 'vitest';
 import { logger } from '@/shared/logger.js';
 import { prisma, disconnectDatabase } from '@/shared/database/client.js';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 
-const execAsync = promisify(exec);
-
-// Use a file-based lock to prevent concurrent setup
-const fs = require('fs');
-const path = require('path');
-const lockFile = path.join(process.cwd(), '.test-setup.lock');
-
-// Global test setup - runs once for all test processes
-beforeAll(async () => {
-  // Check if setup is already in progress or complete
-  const maxWaitTime = 60000; // 60 seconds
-  const startTime = Date.now();
-  
-  while (fs.existsSync(lockFile)) {
-    if (Date.now() - startTime > maxWaitTime) {
-      // Remove stale lock file and continue
-      try {
-        fs.unlinkSync(lockFile);
-        break;
-      } catch (error) {
-        logger.warn('Could not remove stale lock file:', error);
-      }
-    }
-    // Wait a bit before checking again
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-
-  // Create lock file to prevent concurrent setup
-  try {
-    fs.writeFileSync(lockFile, process.pid.toString());
-  } catch (error) {
-    // Another process might have created it first - wait and continue
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return;
-  }
-
-  try {
-    logger.info('Setting up test environment...');
-    
-    // Debug environment variables
-    logger.info(`NODE_ENV: ${process.env.NODE_ENV}`);
-    logger.info(`DATABASE_URL present: ${!!process.env.DATABASE_URL}`);
-    logger.info(`REDIS_URL present: ${!!process.env.REDIS_URL}`);
-    
-    // Validate critical environment variables
-    if (!process.env.DATABASE_URL) {
-      throw new Error('DATABASE_URL environment variable is required');
-    }
-    if (!process.env.NODE_ENV) {
-      throw new Error('NODE_ENV environment variable is required');
-    }
-    
-    // Wait for database to be ready
-    let retries = 30;
-    logger.info('Waiting for database connection...');
-    while (retries > 0) {
-      try {
-        await prisma.$queryRaw`SELECT 1`;
-        logger.info('Database connection successful');
-        break;
-      } catch (error) {
-        retries--;
-        logger.debug(`Database connection attempt failed (${30 - retries}/30): ${error instanceof Error ? error.message : error}`);
-        if (retries === 0) {
-          logger.error('Database connection failed after 30 retries. Last error:', error);
-          throw new Error(`Database connection failed after 30 retries. Ensure PostgreSQL service is running and credentials are correct. Last error: ${error instanceof Error ? error.message : error}`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-
-    // Validate environment variables
-    const databaseUrl = process.env.DATABASE_URL;
-    if (!databaseUrl) {
-      throw new Error('DATABASE_URL environment variable is required for tests');
-    }
-    
-    logger.info(`Using database: ${databaseUrl.replace(/\/\/[^@]+@/, '//***:***@')}`); // Hide credentials in logs
-
-    // Ensure database schema exists with proper error handling
-    try {
-      logger.info('Creating/updating database schema...');
-      // Use db push to create schema from prisma file (better for tests without migrations)
-      await execAsync(`DATABASE_URL="${databaseUrl}" npx prisma db push --force-reset --skip-generate`, {
-        timeout: 30000 // 30 second timeout
-      });
-      logger.info('Database schema created successfully');
-    } catch (error) {
-      logger.warn('Schema creation failed, trying without force-reset:', error);
-      try {
-        await execAsync(`DATABASE_URL="${databaseUrl}" npx prisma db push --skip-generate`, {
-          timeout: 30000
-        });
-        logger.info('Database schema updated successfully');
-      } catch (secondError) {
-        logger.error('All schema setup methods failed:', secondError);
-        throw new Error('Cannot set up test database schema');
-      }
-    }
-
-    // Verify schema was created properly
-    try {
-      const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
-        SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != '_prisma_migrations'
-      `;
-      const tableCount = tables.length;
-      if (tableCount < 5) { // We should have at least users, sessions, etc.
-        throw new Error(`Database schema incomplete - only ${tableCount} tables found`);
-      }
-      logger.info(`Database schema verified - ${tableCount} tables found`);
-    } catch (error) {
-      logger.error('Schema verification failed:', error);
-      throw error;
-    }
-
-    logger.info('Test environment setup complete');
-  } catch (error) {
-    logger.error('Test setup failed:', error);
-    throw error;
-  } finally {
-    // Remove lock file
-    try {
-      if (fs.existsSync(lockFile)) {
-        fs.unlinkSync(lockFile);
-      }
-    } catch (error) {
-      logger.warn('Could not remove lock file:', error);
-    }
-  }
+// Global mock cleanup - runs after each test
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // Global test cleanup
@@ -224,7 +110,7 @@ async function cleanupTestDataInternal(): Promise<void> {
         // Delete records in the correct order (respecting foreign keys)
         for (const tableName of tablesToClean) {
           try {
-            const result = await tx.$executeRawUnsafe(`DELETE FROM "${tableName}"`);
+            await tx.$executeRawUnsafe(`DELETE FROM "${tableName}"`);
             logger.debug(`Cleaned table ${tableName}`);
           } catch (error) {
             logger.debug(`Could not clean table ${tableName}:`, error);

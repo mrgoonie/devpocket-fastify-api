@@ -1,92 +1,55 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
-import { build, createTestUserAndLogin, makeAuthenticatedRequest } from '../../tests/helper.js';
+import { buildApp } from '../../app.js';
+import { createTestUserAndLogin } from '../../tests/helper.js';
 import { cleanupTestData } from '../../tests/setup.js';
 import { prisma } from '../../shared/database/client.js';
 import { encryptionService } from '../../shared/encryption/encryption.service.js';
 import { AuthType, SessionStatus } from '@prisma/client';
+import * as sshService from './ssh.service.js';
+import * as ptyService from './pty.service.js';
 
-// Mock SSH2 module to prevent native module crashes during tests
+// Mock the ssh2 library to avoid native addon issues in tests
 vi.mock('ssh2', () => ({
-  Client: vi.fn().mockImplementation(() => ({
+  Client: vi.fn(() => ({
+    on: vi.fn(),
     connect: vi.fn(),
     end: vi.fn(),
-    on: vi.fn(),
     exec: vi.fn(),
-    shell: vi.fn()
-  }))
-}));
-
-// Mock SSH and PTY services to avoid native module imports
-const mockSshConnectionManager = {
-  destroy: vi.fn().mockResolvedValue(undefined),
-  testConnection: vi.fn(),
-  createConnection: vi.fn(),
-  closeConnection: vi.fn(),
-  getConnectionStats: vi.fn().mockReturnValue({ total: 0, active: 0 })
-};
-
-const mockPtyManager = {
-  destroy: vi.fn(),
-  getSessionStats: vi.fn().mockReturnValue({ total: 0, active: 0 })
-};
-
-vi.mock('./ssh.service.js', () => ({
-  sshConnectionManager: mockSshConnectionManager
-}));
-
-vi.mock('./pty.service.js', () => ({
-  ptyManager: mockPtyManager
+    shell: vi.fn(),
+  })),
 }));
 
 describe('Terminal Module Integration Tests', () => {
   let app: FastifyInstance;
   let authToken: string;
-  let testUser: any;
 
   beforeAll(async () => {
-    app = await build();
+    app = await buildApp();
     await app.ready();
   });
 
   afterAll(async () => {
-    // Cleanup mocked services
-    await mockSshConnectionManager.destroy();
-    await mockPtyManager.destroy();
+    vi.restoreAllMocks();
     await app.close();
   });
 
-  beforeEach(async () => {
-    // Clean up test data
-    await cleanupTestData();
-    
-    // Small delay to ensure database is ready
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Create test user and get auth token using standardized helper
-    const authData = await createTestUserAndLogin(app, 'terminal');
-    testUser = authData.user;
-    authToken = authData.token;
-  });
-
-  afterEach(async () => {
-    // Reset mocks after each test
-    vi.clearAllMocks();
-    
-    // Clean up test data after each test
-    await cleanupTestData();
-    
-    // Small delay to ensure cleanup is complete
-    await new Promise(resolve => setTimeout(resolve, 50));
-  });
-
   describe('SSH Profile Management', () => {
+    beforeEach(async () => {
+      await cleanupTestData();
+      const authData = await createTestUserAndLogin(app);
+      authToken = authData.token;
+      // Re-establish baseline mocks for each test
+      vi.spyOn(ptyService.ptyManager, 'createSession').mockResolvedValue({ id: 'mock_session_id', userId: authData.user.id, ptyProcess: null, isActive: true, createdAt: new Date(), lastActivity: new Date() });
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     const testSshKey = {
-      private_key: `-----BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAFwAAAAdzc2gtcn
-NhAAAAAwEAAQAAAQEA1234567890abcdef...
------END OPENSSH PRIVATE KEY-----`,
-      public_key: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDXNjQ1Njc4OTBhYmNkZWY... user@host'
+      private_key: `-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAFwAAAAdzc2gtcn\nNhAAAAAwEAAQAAAQEA1234567890abcdef...\n-----END OPENSSH PRIVATE KEY-----`,
+      public_key: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDXNjQ1Njc4OTBhYmNkZWY... user@host',
     };
 
     it('should create SSH profile with key authentication', async () => {
@@ -101,8 +64,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           username: 'testuser',
           auth_type: AuthType.SSH_KEY,
           private_key: testSshKey.private_key,
-          public_key: testSshKey.public_key
-        }
+          public_key: testSshKey.public_key,
+        },
       });
 
       expect(response.statusCode).toBe(201);
@@ -124,8 +87,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           host: 'password.example.com',
           port: 2222,
           username: 'admin',
-          auth_type: AuthType.PASSWORD
-        }
+          auth_type: AuthType.PASSWORD,
+        },
       });
 
       expect(response.statusCode).toBe(201);
@@ -144,9 +107,9 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           host: 'invalid.example.com',
           port: 22,
           username: 'user',
-          auth_type: AuthType.SSH_KEY
+          auth_type: AuthType.SSH_KEY,
           // Missing private_key and public_key
-        }
+        },
       });
 
       expect(response.statusCode).toBe(400);
@@ -166,8 +129,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           host: 'server1.example.com',
           port: 22,
           username: 'user1',
-          auth_type: AuthType.PASSWORD
-        }
+          auth_type: AuthType.PASSWORD,
+        },
       });
 
       // Try to create second profile with same name
@@ -180,8 +143,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           host: 'server2.example.com',
           port: 22,
           username: 'user2',
-          auth_type: AuthType.PASSWORD
-        }
+          auth_type: AuthType.PASSWORD,
+        },
       });
 
       expect(response.statusCode).toBe(409);
@@ -201,8 +164,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           host: 'server1.example.com',
           port: 22,
           username: 'user1',
-          auth_type: AuthType.PASSWORD
-        }
+          auth_type: AuthType.PASSWORD,
+        },
       });
 
       await app.inject({
@@ -216,14 +179,14 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           username: 'user2',
           auth_type: AuthType.SSH_KEY,
           private_key: testSshKey.private_key,
-          public_key: testSshKey.public_key
-        }
+          public_key: testSshKey.public_key,
+        },
       });
 
       const response = await app.inject({
         method: 'GET',
         url: '/api/v1/ssh/profiles',
-        headers: { authorization: `Bearer ${authToken}` }
+        headers: { authorization: `Bearer ${authToken}` },
       });
 
       expect(response.statusCode).toBe(200);
@@ -244,8 +207,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           host: 'original.example.com',
           port: 22,
           username: 'original',
-          auth_type: AuthType.PASSWORD
-        }
+          auth_type: AuthType.PASSWORD,
+        },
       });
 
       const profileId = createResponse.json().data.id;
@@ -259,8 +222,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           name: 'Updated Server',
           host: 'updated.example.com',
           port: 2222,
-          username: 'updated'
-        }
+          username: 'updated',
+        },
       });
 
       expect(response.statusCode).toBe(200);
@@ -283,8 +246,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           host: 'delete.example.com',
           port: 22,
           username: 'delete',
-          auth_type: AuthType.PASSWORD
-        }
+          auth_type: AuthType.PASSWORD,
+        },
       });
 
       const profileId = createResponse.json().data.id;
@@ -293,7 +256,7 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
       const response = await app.inject({
         method: 'DELETE',
         url: `/api/v1/ssh/profiles/${profileId}`,
-        headers: { authorization: `Bearer ${authToken}` }
+        headers: { authorization: `Bearer ${authToken}` },
       });
 
       expect(response.statusCode).toBe(204);
@@ -302,7 +265,7 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
       const getResponse = await app.inject({
         method: 'GET',
         url: `/api/v1/ssh/profiles/${profileId}`,
-        headers: { authorization: `Bearer ${authToken}` }
+        headers: { authorization: `Bearer ${authToken}` },
       });
 
       expect(getResponse.statusCode).toBe(404);
@@ -310,11 +273,22 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
   });
 
   describe('SSH Connection Testing', () => {
+    beforeEach(async () => {
+      await cleanupTestData();
+      const authData = await createTestUserAndLogin(app);
+      authToken = authData.token;
+      vi.spyOn(sshService.sshConnectionManager, 'testConnection').mockResolvedValue({ success: true, connectionTime: 123 });
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('should test SSH connection with password auth (mock)', async () => {
-      // Mock successful connection
-      mockSshConnectionManager.testConnection.mockResolvedValueOnce({
+      // This test requires a more specific mock for testConnection
+      vi.spyOn(sshService.sshConnectionManager, 'testConnection').mockResolvedValueOnce({
         success: true,
-        connectionTime: 1500
+        connectionTime: 1500,
       });
 
       const response = await app.inject({
@@ -326,8 +300,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           port: 22,
           username: 'testuser',
           auth_type: AuthType.PASSWORD,
-          password: 'testpassword'
-        }
+          password: 'testpassword',
+        },
       });
 
       expect(response.statusCode).toBe(200);
@@ -338,10 +312,10 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
     });
 
     it('should handle SSH connection failure (mock)', async () => {
-      // Mock failed connection
-      mockSshConnectionManager.testConnection.mockResolvedValueOnce({
+      // This test requires a more specific mock for testConnection
+      vi.spyOn(sshService.sshConnectionManager, 'testConnection').mockResolvedValueOnce({
         success: false,
-        error: 'Connection timeout'
+        error: 'Connection timeout',
       });
 
       const response = await app.inject({
@@ -353,8 +327,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           port: 22,
           username: 'testuser',
           auth_type: AuthType.PASSWORD,
-          password: 'wrongpassword'
-        }
+          password: 'wrongpassword',
+        },
       });
 
       expect(response.statusCode).toBe(200);
@@ -366,14 +340,26 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
   });
 
   describe('Terminal Session Management', () => {
+    beforeEach(async () => {
+      await cleanupTestData();
+      const authData = await createTestUserAndLogin(app);
+      authToken = authData.token;
+      vi.spyOn(ptyService.ptyManager, 'createSession').mockResolvedValue({ id: 'mock_session_id', userId: authData.user.id, ptyProcess: null, isActive: true, createdAt: new Date(), lastActivity: new Date() } as ptyService.PtySession);
+      vi.spyOn(sshService.sshConnectionManager, 'createConnection').mockResolvedValue({} as sshService.SshConnection);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('should create local terminal session', async () => {
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/terminal/sessions',
         headers: { authorization: `Bearer ${authToken}` },
         payload: {
-          session_type: 'local'
-        }
+          session_type: 'local',
+        },
       });
 
       expect(response.statusCode).toBe(201);
@@ -394,8 +380,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
           host: 'ssh.example.com',
           port: 22,
           username: 'sshuser',
-          auth_type: AuthType.PASSWORD
-        }
+          auth_type: AuthType.PASSWORD,
+        },
       });
 
       const profileId = profileResponse.json().data.id;
@@ -407,8 +393,8 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
         headers: { authorization: `Bearer ${authToken}` },
         payload: {
           session_type: 'ssh',
-          profile_id: profileId
-        }
+          profile_id: profileId,
+        },
       });
 
       expect(response.statusCode).toBe(201);
@@ -423,20 +409,20 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
         method: 'POST',
         url: '/api/v1/terminal/sessions',
         headers: { authorization: `Bearer ${authToken}` },
-        payload: { session_type: 'local' }
+        payload: { session_type: 'local' },
       });
 
       await app.inject({
         method: 'POST',
         url: '/api/v1/terminal/sessions',
         headers: { authorization: `Bearer ${authToken}` },
-        payload: { session_type: 'local' }
+        payload: { session_type: 'local' },
       });
 
       const response = await app.inject({
         method: 'GET',
         url: '/api/v1/terminal/sessions',
-        headers: { authorization: `Bearer ${authToken}` }
+        headers: { authorization: `Bearer ${authToken}` },
       });
 
       expect(response.statusCode).toBe(200);
@@ -451,7 +437,7 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
         method: 'POST',
         url: '/api/v1/terminal/sessions',
         headers: { authorization: `Bearer ${authToken}` },
-        payload: { session_type: 'local' }
+        payload: { session_type: 'local' },
       });
 
       const sessionId = createResponse.json().data.id;
@@ -460,7 +446,7 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
       const response = await app.inject({
         method: 'DELETE',
         url: `/api/v1/terminal/sessions/${sessionId}`,
-        headers: { authorization: `Bearer ${authToken}` }
+        headers: { authorization: `Bearer ${authToken}` },
       });
 
       expect(response.statusCode).toBe(204);
@@ -468,13 +454,24 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
   });
 
   describe('Command History', () => {
+    beforeEach(async () => {
+      await cleanupTestData();
+      const authData = await createTestUserAndLogin(app);
+      authToken = authData.token;
+      vi.spyOn(ptyService.ptyManager, 'createSession').mockResolvedValue({ id: 'mock_session_id', userId: authData.user.id, ptyProcess: null, isActive: true, createdAt: new Date(), lastActivity: new Date() } as ptyService.PtySession);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('should retrieve command history for session', async () => {
       // Create session first
       const sessionResponse = await app.inject({
         method: 'POST',
         url: '/api/v1/terminal/sessions',
         headers: { authorization: `Bearer ${authToken}` },
-        payload: { session_type: 'local' }
+        payload: { session_type: 'local' },
       });
 
       expect(sessionResponse.statusCode).toBe(201);
@@ -489,21 +486,21 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
             session_id: sessionId,
             command: 'ls -la',
             output: 'total 0\ndrwxr-xr-x 2 user user 4096 Jan 1 12:00 .',
-            status: 0
+            status: 0,
           },
           {
             session_id: sessionId,
             command: 'pwd',
             output: '/home/user',
-            status: 0
-          }
-        ]
+            status: 0,
+          },
+        ],
       });
 
       const response = await app.inject({
         method: 'GET',
         url: `/api/v1/terminal/sessions/${sessionId}/history`,
-        headers: { authorization: `Bearer ${authToken}` }
+        headers: { authorization: `Bearer ${authToken}` },
       });
 
       expect(response.statusCode).toBe(200);
@@ -519,7 +516,7 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
         method: 'POST',
         url: '/api/v1/terminal/sessions',
         headers: { authorization: `Bearer ${authToken}` },
-        payload: { session_type: 'local' }
+        payload: { session_type: 'local' },
       });
 
       expect(sessionResponse.statusCode).toBe(201);
@@ -532,7 +529,7 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
         session_id: sessionId,
         command: `command_${i}`,
         output: `output_${i}`,
-        status: 0
+        status: 0,
       }));
 
       await prisma.commandHistory.createMany({ data: commands });
@@ -541,7 +538,7 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
       const response = await app.inject({
         method: 'GET',
         url: `/api/v1/terminal/sessions/${sessionId}/history?limit=10&offset=5`,
-        headers: { authorization: `Bearer ${authToken}` }
+        headers: { authorization: `Bearer ${authToken}` },
       });
 
       expect(response.statusCode).toBe(200);
@@ -553,11 +550,23 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
   });
 
   describe('Terminal Statistics', () => {
+    beforeEach(async () => {
+      await cleanupTestData();
+      const authData = await createTestUserAndLogin(app);
+      authToken = authData.token;
+      vi.spyOn(sshService.sshConnectionManager, 'getConnectionStats').mockReturnValue({ total: 1, active: 1, idle: 0, byUser: { [authData.user.id]: 1 } });
+      vi.spyOn(ptyService.ptyManager, 'getSessionStats').mockReturnValue({ total: 1, active: 1 });
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('should return terminal statistics', async () => {
       const response = await app.inject({
         method: 'GET',
         url: '/api/v1/terminal/stats',
-        headers: { authorization: `Bearer ${authToken}` }
+        headers: { authorization: `Bearer ${authToken}` },
       });
 
       expect(response.statusCode).toBe(200);
@@ -576,13 +585,13 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
         { method: 'POST', url: '/api/v1/ssh/profiles' },
         { method: 'GET', url: '/api/v1/terminal/sessions' },
         { method: 'POST', url: '/api/v1/terminal/sessions' },
-        { method: 'GET', url: '/api/v1/terminal/stats' }
+        { method: 'GET', url: '/api/v1/terminal/stats' },
       ];
 
       for (const endpoint of endpoints) {
         const response = await app.inject({
           method: endpoint.method as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
-          url: endpoint.url
+          url: endpoint.url,
           // No authorization header
         });
 
@@ -594,22 +603,22 @@ NhAAAAAwEAAQAAAQEA1234567890abcdef...
   describe('Encryption Service', () => {
     it('should encrypt and decrypt SSH keys correctly', () => {
       const originalKey = 'test-ssh-private-key-content';
-      
+
       const encrypted = encryptionService.encryptSshKey(originalKey);
       expect(encrypted).toContain(':'); // Should have IV:encrypted format
       expect(encrypted).not.toBe(originalKey);
-      
+
       const decrypted = encryptionService.decryptSshKey(encrypted);
       expect(decrypted).toBe(originalKey);
     });
 
     it('should encrypt and decrypt passphrases correctly', () => {
       const originalPassphrase = 'test-passphrase-123';
-      
+
       const encrypted = encryptionService.encryptPassphrase(originalPassphrase);
       expect(encrypted).toContain(':');
       expect(encrypted).not.toBe(originalPassphrase);
-      
+
       const decrypted = encryptionService.decryptPassphrase(encrypted);
       expect(decrypted).toBe(originalPassphrase);
     });
