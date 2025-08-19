@@ -4,12 +4,12 @@ import path from 'path';
 
 // Set environment variables for testing
 const workerId = process.env.VITEST_WORKER_ID || '1';
-const baseDatabaseUrl = 'postgresql://devpocket_test:devpocket_test@localhost:5433';
+const baseDatabaseUrl = 'postgresql://devpocket_test:devpocket_test@localhost:5432';
 const databaseName = `devpocket-fastify-api-test-${workerId}`;
 
 process.env.DATABASE_URL = `${baseDatabaseUrl}/${databaseName}`;
 // Use a different Redis database for each worker to avoid conflicts
-process.env.REDIS_URL = `redis://localhost:6380/${workerId}`;
+process.env.REDIS_URL = `redis://localhost:6379/${workerId}`;
 
 // Load any other environment variables from .env.test if it exists
 config({ path: path.resolve(process.cwd(), '.env.test') });

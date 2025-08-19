@@ -20,8 +20,8 @@ export default defineConfig({
     hookTimeout: 60000, // 60 seconds for setup/teardown hooks
     env: {
       NODE_ENV: 'test',
-      DATABASE_URL: 'postgresql://devpocket_test:devpocket_test@localhost:5433/devpocket-fastify-api-test?schema=public',
-      REDIS_URL: 'redis://localhost:6380/1',
+      DATABASE_URL: 'postgresql://devpocket_test:devpocket_test@localhost:5432/devpocket-fastify-api-test?schema=public',
+      REDIS_URL: 'redis://localhost:6379/1',
       JWT_SECRET: 'test-super-secret-jwt-key-for-testing-only-min-32-chars',
       JWT_REFRESH_SECRET: 'test-refresh-secret-for-testing-only-min-32-chars',
       ENCRYPTION_KEY: 'test-encryption-key-for-ssh-keys-testing-min-32-chars',
