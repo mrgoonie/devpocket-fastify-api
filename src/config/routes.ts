@@ -22,11 +22,11 @@ interface TerminalSessionCreateBody {
 }
 
 export async function setupRoutes(fastify: FastifyInstance) {
-  // Health routes (no prefix, available at root)
-  await fastify.register(healthRoutes);
-
   // API prefix
   await fastify.register(async function apiRoutes(fastify) {
+    // Health routes
+    await fastify.register(healthRoutes);
+
     // Auth routes
     await fastify.register(authRoutes, { prefix: '/auth' });
 
