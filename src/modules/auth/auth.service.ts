@@ -74,36 +74,60 @@ export class AuthService {
       // Hash password
       const hashedPassword = await this.hashPassword(input.password);
 
-      // Create user
-      const user = await prisma.user.create({
-        data: {
-          email: input.email,
-          username: input.username,
-          password_hash: hashedPassword,
-          email_verified: false,
-        },
-      });
+      // Use a transaction to ensure all related data is created atomically
+      const user = await prisma.$transaction(async (tx) => {
+        // Create user
+        const newUser = await tx.user.create({
+          data: {
+            email: input.email,
+            username: input.username,
+            password_hash: hashedPassword,
+            email_verified: false,
+          },
+        });
 
-      // Create email verification token
-      const verificationToken = this.generateSecureToken();
-      await prisma.emailVerificationToken.create({
-        data: {
-          user_id: user.id,
-          token: verificationToken,
-          expires_at: new Date(Date.now() + EMAIL_VERIFICATION_EXPIRES_IN_MS),
-        },
+        // Create a free subscription for the new user
+        await tx.subscription.create({
+          data: {
+            user_id: newUser.id,
+            plan_type: 'FREE',
+            status: 'ACTIVE',
+            started_at: new Date(),
+            expires_at: null, // Free plan does not expire
+          },
+        });
+
+        // Create usage limits for the new user
+        await tx.usageLimits.create({
+          data: {
+            user_id: newUser.id,
+            plan_type: 'FREE',
+            reset_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+          },
+        });
+
+        // Create email verification token
+        const verificationToken = this.generateSecureToken();
+        await tx.emailVerificationToken.create({
+          data: {
+            user_id: newUser.id,
+            token: verificationToken,
+            expires_at: new Date(Date.now() + EMAIL_VERIFICATION_EXPIRES_IN_MS),
+          },
+        });
+
+        // Send verification email (outside transaction)
+        try {
+          const { EmailService } = await import('@/shared/email/email.service.js');
+          await EmailService.sendWelcomeEmail(newUser.email, newUser.username, verificationToken);
+        } catch (error) {
+          logger.warn('Failed to send welcome email:', error);
+        }
+
+        return newUser;
       });
 
       logger.info(`User registered: ${user.email}`, { userId: user.id });
-
-      // Send verification email
-      try {
-        const { EmailService } = await import('@/shared/email/email.service.js');
-        await EmailService.sendWelcomeEmail(user.email, user.username, verificationToken);
-      } catch (error) {
-        logger.warn('Failed to send welcome email:', error);
-        // Don't fail registration if email fails
-      }
 
       return this.formatUserResponse(user);
     } catch (error) {

@@ -1,6 +1,13 @@
 // Load test environment variables before any imports
-import dotenv from 'dotenv';
-dotenv.config({ path: '.env.test' });
+import { config } from 'dotenv';
+import path from 'path';
+
+// Set environment variables for testing
+process.env.DATABASE_URL = 'postgresql://devpocket_test:devpocket_test@localhost:5433/devpocket-fastify-api-test';
+process.env.REDIS_URL = 'redis://localhost:6380';
+
+// Load any other environment variables from .env.test if it exists
+config({ path: path.resolve(process.cwd(), '.env.test') });
 
 import { beforeAll, afterAll } from 'vitest';
 import { logger } from '@/shared/logger.js';
@@ -63,13 +70,13 @@ beforeAll(async () => {
 
     // Ensure database schema exists
     try {
-      await execAsync(`DATABASE_URL="${databaseUrl}" npx prisma db push --force-reset --skip-generate`);
+      await execAsync(`DATABASE_URL="${databaseUrl}" pnpm exec prisma db push --force-reset --skip-generate`);
       logger.info('Database schema reset successfully');
     } catch (error) {
-      logger.warn('Schema setup failed:', error);
+      logger.warn('Schema setup failed, trying without reset:', error);
       // Try without reset
       try {
-        await execAsync(`DATABASE_URL="${databaseUrl}" npx prisma db push --skip-generate`);
+        await execAsync(`DATABASE_URL="${databaseUrl}" pnpm exec prisma db push --skip-generate`);
         logger.info('Database schema updated successfully');
       } catch (secondError) {
         logger.error('Database schema setup completely failed:', secondError);
@@ -98,76 +105,36 @@ afterAll(async () => {
 
 // Helper function for tests to clean up their data
 export async function cleanupTestData(): Promise<void> {
-  try {
-    // Use a transaction to ensure atomicity
-    await prisma.$transaction(async (tx) => {
-      // Clean up test data in order to respect foreign key constraints
-      // This order ensures child tables are cleaned before parent tables
-      const deleteOperations = [
-        () => tx.commandHistory.deleteMany(),
-        () => tx.emailVerificationToken.deleteMany(),
-        () => tx.passwordResetToken.deleteMany(),
-        () => tx.paymentHistory.deleteMany(),
-        () => tx.invoice.deleteMany(),
-        () => tx.sshKey.deleteMany(),
-        () => tx.terminalSession.deleteMany(),
-        () => tx.session.deleteMany(),
-        () => tx.usageLimits.deleteMany(),
-        () => tx.subscription.deleteMany(),
-        () => tx.sshProfile.deleteMany(),
-        () => tx.user.deleteMany(),
-      ];
+  const tableNames = [
+    'command_history',
+    'email_verification_tokens',
+    'password_reset_tokens',
+    'payment_history',
+    'invoices',
+    'ssh_keys',
+    'terminal_sessions',
+    'sessions',
+    'usage_limits',
+    'subscriptions',
+    'ssh_profiles',
+    'users',
+  ];
 
-      // Execute deletions in order
-      for (const deleteOp of deleteOperations) {
-        try {
-          await deleteOp();
-        } catch (error) {
-          // Log but continue - table/model might not exist
-          logger.debug(`Could not clean up table:`, error);
-        }
-      }
-    }, {
-      timeout: 30000, // 30 second timeout
-    });
-    
-    // Small delay to ensure cleanup is complete
-    await new Promise(resolve => setTimeout(resolve, 50));
-  } catch (error) {
-    logger.warn('Test cleanup failed:', error);
-    // If cleanup fails, try a more aggressive approach
-    try {
-      // Disable foreign key checks temporarily
-      await prisma.$executeRaw`SET session_replication_role = replica;`;
-      
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Disable foreign key checks for the transaction
+      await tx.$executeRaw`SET session_replication_role = 'replica';`;
+
       // Truncate all tables
-      const tables = [
-        'command_history',
-        'email_verification_tokens', 
-        'password_reset_tokens',
-        'payment_history',
-        'invoices',
-        'ssh_keys',
-        'terminal_sessions',
-        'sessions',
-        'usage_limits',
-        'subscriptions',
-        'ssh_profiles',
-        'users'
-      ];
-      
-      for (const table of tables) {
-        try {
-          await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${table}" RESTART IDENTITY CASCADE;`);
-        } catch (err) {
-          // Table might not exist, continue
-        }
+      for (const tableName of tableNames) {
+        await tx.$executeRawUnsafe(`TRUNCATE TABLE "${tableName}" RESTART IDENTITY CASCADE;`);
       }
-      
+
       // Re-enable foreign key checks
-      await prisma.$executeRaw`SET session_replication_role = DEFAULT;`;
-    } catch (fallbackError) {
-      logger.error('Fallback cleanup also failed:', fallbackError);
-    }
+      await tx.$executeRaw`SET session_replication_role = 'origin';`;
+    });
+  } catch (error) {
+    logger.error('Failed to clean up test data:', error);
+    throw new Error('Could not clean up test database.');
   }
 }
