@@ -8,10 +8,17 @@ export default defineConfig({
     setupFiles: ['./src/tests/setup.ts'],
     include: ['src/**/*.{test,spec}.{js,ts}'],
     exclude: ['node_modules', 'dist'],
-    fileParallelism: false, // Run test files sequentially to avoid DB conflicts
+    // Enhanced isolation settings to prevent database conflicts
+    fileParallelism: false, // Run test files sequentially
     maxConcurrency: 1, // Only one test at a time
-    isolate: false, // Don't isolate processes - causes DB schema conflicts
-    pool: 'threads', // Use threads instead of forks
+    isolate: true, // Isolate test processes to prevent shared state
+    pool: 'threads', // Use threads for better resource management
+    sequence: {
+      shuffle: false, // Run tests in predictable order
+    },
+    // Increased timeouts for database operations
+    testTimeout: 30000, // 30 seconds per test
+    hookTimeout: 60000, // 60 seconds for setup/teardown hooks
     env: {
       NODE_ENV: 'test',
       DATABASE_URL: 'postgresql://devpocket_test:devpocket_test@localhost:5432/devpocket-fastify-api-test?schema=public',

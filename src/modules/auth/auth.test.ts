@@ -2,14 +2,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { buildApp } from '@/app.js';
 import { cleanupTestData } from '@/tests/setup.js';
 import { prisma } from '@/shared/database/client.js';
+import { TEST_USERS } from '@/tests/helper.js';
 
 describe('Authentication Module', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
-  const testUser = {
-    email: 'test@example.com',
-    username: 'testuser',
-    password: 'TestPass123',
-  };
+  const testUser = TEST_USERS.auth;
 
   beforeAll(async () => {
     app = await buildApp();
