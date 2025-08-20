@@ -83,16 +83,22 @@ P8fL6hN5eAAAAGHRlc3RrZXlAZGV2cG9ja2V0AQIDBAUG
 async function createAuthenticatedWebSocket(
   app: FastifyInstance, 
   authToken: string, 
-  path: string = '/api/v1/terminal/ws'
+  path: string = '/api/v1/terminal/ws',
+  serverAddress?: { port: number; address: string }
 ): Promise<WebSocket> {
-  const server = app.server;
-  const address = server.address();
+  let port: number;
   
-  if (!address || typeof address === 'string') {
-    throw new Error('Unable to get server address');
+  if (serverAddress) {
+    port = serverAddress.port;
+  } else {
+    const address = app.server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Unable to get server address');
+    }
+    port = address.port;
   }
 
-  const wsUrl = `ws://localhost:${address.port}${path}`;
+  const wsUrl = `ws://localhost:${port}${path}`;
   const ws = new WebSocket(wsUrl, {
     headers: {
       Authorization: `Bearer ${authToken}`,
@@ -130,10 +136,21 @@ function waitForMessage(ws: WebSocket, timeout: number = 5000): Promise<WebSocke
 describe('SSH WebSocket Terminal Tests', () => {
   let app: FastifyInstance;
   let authToken: string;
+  let serverAddress: { port: number; address: string };
 
   beforeAll(async () => {
     app = await buildApp();
     await app.ready();
+    
+    // Start the server on a random port to get an address
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const address = app.server.address();
+    
+    if (!address || typeof address === 'string') {
+      throw new Error('Failed to start server for testing');
+    }
+    
+    serverAddress = address;
   });
 
   afterAll(async () => {
@@ -152,14 +169,7 @@ describe('SSH WebSocket Terminal Tests', () => {
 
   describe('WebSocket Authentication', () => {
     it('should reject WebSocket connection without authentication', async () => {
-      const server = app.server;
-      const address = server.address();
-      
-      if (!address || typeof address === 'string') {
-        throw new Error('Unable to get server address');
-      }
-
-      const wsUrl = `ws://localhost:${address.port}/api/v1/terminal/ws`;
+      const wsUrl = `ws://localhost:${serverAddress.port}/api/v1/terminal/ws`;
       
       await expect(async () => {
         const ws = new WebSocket(wsUrl);
@@ -179,7 +189,7 @@ describe('SSH WebSocket Terminal Tests', () => {
 
     it('should accept WebSocket connection with valid authentication', async () => {
       try {
-        const ws = await createAuthenticatedWebSocket(app, authToken);
+        const ws = await createAuthenticatedWebSocket(app, authToken, '/api/v1/terminal/ws', serverAddress);
         expect(ws.readyState).toBe(WebSocket.OPEN);
         ws.close();
       } catch (error) {
@@ -212,7 +222,7 @@ describe('SSH WebSocket Terminal Tests', () => {
       const { data: profile } = profileResponse.json<ApiResponse<SshProfileData>>();
 
       try {
-        const ws = await createAuthenticatedWebSocket(app, authToken);
+        const ws = await createAuthenticatedWebSocket(app, authToken, '/api/v1/terminal/ws', serverAddress);
 
         // Send connection request
         const connectionRequest = {
@@ -257,7 +267,7 @@ describe('SSH WebSocket Terminal Tests', () => {
       const { data: profile } = profileResponse.json<ApiResponse<SshProfileData>>();
 
       try {
-        const ws = await createAuthenticatedWebSocket(app, authToken);
+        const ws = await createAuthenticatedWebSocket(app, authToken, '/api/v1/terminal/ws', serverAddress);
 
         // Connect to SSH
         ws.send(JSON.stringify({
@@ -327,7 +337,7 @@ describe('SSH WebSocket Terminal Tests', () => {
       const { data: profile } = profileResponse.json<ApiResponse<SshProfileData>>();
 
       try {
-        const ws = await createAuthenticatedWebSocket(app, authToken);
+        const ws = await createAuthenticatedWebSocket(app, authToken, '/api/v1/terminal/ws', serverAddress);
 
         // Send connection request
         ws.send(JSON.stringify({
@@ -371,7 +381,7 @@ describe('SSH WebSocket Terminal Tests', () => {
       const { data: profile } = profileResponse.json<ApiResponse<SshProfileData>>();
 
       try {
-        const ws = await createAuthenticatedWebSocket(app, authToken);
+        const ws = await createAuthenticatedWebSocket(app, authToken, '/api/v1/terminal/ws', serverAddress);
 
         // Send connection request with wrong password
         ws.send(JSON.stringify({
@@ -414,7 +424,7 @@ describe('SSH WebSocket Terminal Tests', () => {
       const { data: profile } = profileResponse.json<ApiResponse<SshProfileData>>();
 
       try {
-        const ws = await createAuthenticatedWebSocket(app, authToken);
+        const ws = await createAuthenticatedWebSocket(app, authToken, '/api/v1/terminal/ws', serverAddress);
 
         // Send connection request
         ws.send(JSON.stringify({
@@ -462,7 +472,7 @@ describe('SSH WebSocket Terminal Tests', () => {
       const { data: profile } = profileResponse.json<ApiResponse<SshProfileData>>();
 
       try {
-        const ws = await createAuthenticatedWebSocket(app, authToken);
+        const ws = await createAuthenticatedWebSocket(app, authToken, '/api/v1/terminal/ws', serverAddress);
 
         // Connect and start shell
         ws.send(JSON.stringify({
@@ -529,7 +539,7 @@ describe('SSH WebSocket Terminal Tests', () => {
       const { data: profile } = profileResponse.json<ApiResponse<SshProfileData>>();
 
       try {
-        const ws = await createAuthenticatedWebSocket(app, authToken);
+        const ws = await createAuthenticatedWebSocket(app, authToken, '/api/v1/terminal/ws', serverAddress);
 
         // Connect
         ws.send(JSON.stringify({

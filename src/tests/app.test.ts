@@ -17,7 +17,7 @@ describe('App Integration Tests', () => {
   it('should respond to health check', async () => {
     const response = await app.inject({
       method: 'GET',
-      url: '/health',
+      url: '/api/v1/health',
     });
 
     expect(response.statusCode).toBe(200);
