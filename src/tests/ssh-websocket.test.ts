@@ -33,12 +33,6 @@ interface SshProfileData {
   has_ssh_key: boolean;
 }
 
-interface _TerminalSessionData {
-  id: string;
-  status: string;
-  profile_id: string | null;
-}
-
 // SSH test configuration from environment
 const SSH_TEST_CONFIG = {
   host: process.env.SSH_TEST_HOST || '46.250.239.227',
