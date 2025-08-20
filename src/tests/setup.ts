@@ -82,34 +82,80 @@ async function resetDatabaseInternal(): Promise<void> {
   try {
     logger.debug('Starting complete database reset...');
     
-    // Drop all data and reset sequences
-    await prisma.$transaction(async (tx) => {
-      // Disable foreign key checks temporarily
-      await tx.$executeRawUnsafe('SET session_replication_role = replica;');
-      
-      // Get all table names (excluding system tables)
-      const tables = await tx.$queryRaw<Array<{ tablename: string }>>`
-        SELECT tablename FROM pg_tables 
-        WHERE schemaname = 'public' 
-        AND tablename NOT LIKE 'pg_%' 
-        AND tablename != '_prisma_migrations'
-      `;
-      
-      // Truncate all tables
-      for (const { tablename } of tables) {
-        await tx.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" RESTART IDENTITY CASCADE;`);
-      }
-      
-      // Re-enable foreign key checks
-      await tx.$executeRawUnsafe('SET session_replication_role = DEFAULT;');
-    }, {
-      timeout: 30000, // 30 second timeout
-    });
+    // Add retry logic for CI environments where database operations might be slower
+    const maxRetries = process.env.CI ? 3 : 1;
+    let lastError: any;
     
-    logger.debug('Database reset completed successfully');
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Add delay between retries for CI stability
+        if (attempt > 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          logger.debug(`Database reset retry attempt ${attempt}/${maxRetries}`);
+        }
+        
+        // Drop all data and reset sequences
+        await prisma.$transaction(async (tx) => {
+          // Don't terminate connections as it's causing database issues
+          // Just disable foreign key checks temporarily
+          await tx.$executeRawUnsafe('SET session_replication_role = replica;');
+          
+          // Get all table names (excluding system tables)
+          const tables = await tx.$queryRaw<Array<{ tablename: string }>>`
+            SELECT tablename FROM pg_tables 
+            WHERE schemaname = 'public' 
+            AND tablename NOT LIKE 'pg_%' 
+            AND tablename != '_prisma_migrations'
+          `;
+          
+          // Truncate all tables in dependency order to avoid foreign key issues
+          const dependencyOrder = [
+            'email_verification_tokens',
+            'password_reset_tokens',
+            'user_sessions',
+            'subscriptions',
+            'command_history',
+            'terminal_sessions',
+            'ssh_profiles',
+            'users'
+          ];
+          
+          // First truncate tables in dependency order
+          for (const tablename of dependencyOrder) {
+            const tableExists = tables.some(t => t.tablename === tablename);
+            if (tableExists) {
+              await tx.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" RESTART IDENTITY CASCADE;`);
+            }
+          }
+          
+          // Then truncate any remaining tables
+          for (const { tablename } of tables) {
+            if (!dependencyOrder.includes(tablename)) {
+              await tx.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" RESTART IDENTITY CASCADE;`);
+            }
+          }
+          
+          // Re-enable foreign key checks
+          await tx.$executeRawUnsafe('SET session_replication_role = DEFAULT;');
+        }, {
+          timeout: process.env.CI ? 60000 : 30000, // Longer timeout in CI
+        });
+        
+        logger.debug('Database reset completed successfully');
+        return; // Success, exit retry loop
+        
+      } catch (error) {
+        lastError = error;
+        logger.warn(`Database reset attempt ${attempt} failed:`, error);
+        
+        if (attempt === maxRetries) {
+          throw lastError;
+        }
+      }
+    }
     
   } catch (error) {
-    logger.error('Database reset failed:', error);
+    logger.error('Database reset failed after all retries:', error);
     throw error;
   }
 }

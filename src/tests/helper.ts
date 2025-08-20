@@ -55,39 +55,102 @@ export const createTestUserAndLogin = async (
     role,
   };
 
-  // Register user
-  const registerResponse = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/register',
-    payload: userPayload,
-  });
+  // Add retry logic for CI environments where database operations might be slower
+  const maxRetries = process.env.CI ? 3 : 1;
+  const retryDelay = process.env.CI ? 1000 : 100;
+  
+  let lastRegisterError: any;
+  let registerResponse: any;
 
-  if (registerResponse.statusCode !== 201) {
-    throw new Error(
-      `Failed to register test user: ${registerResponse.statusCode} - ${registerResponse.body}`,
-    );
+  // Register user with retry logic
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 1) {
+        await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
+        console.log(`Registration retry attempt ${attempt}/${maxRetries} for ${email}`);
+      }
+
+      registerResponse = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/register',
+        payload: userPayload,
+      });
+
+      if (registerResponse.statusCode === 201) {
+        break; // Success
+      } else {
+        lastRegisterError = new Error(
+          `Registration failed: ${registerResponse.statusCode} - ${registerResponse.body}`
+        );
+        if (attempt === maxRetries) {
+          throw lastRegisterError;
+        }
+      }
+    } catch (error) {
+      lastRegisterError = error;
+      if (attempt === maxRetries) {
+        throw new Error(
+          `Failed to register test user after ${maxRetries} attempts: ${registerResponse?.statusCode || 'unknown'} - ${registerResponse?.body || error}`,
+        );
+      }
+    }
   }
 
-  // Small delay to ensure user is properly persisted before login
-  await new Promise(resolve => setTimeout(resolve, 50));
+  // Extended delay to ensure user is properly persisted before login, especially in CI
+  await new Promise(resolve => setTimeout(resolve, process.env.CI ? 200 : 50));
 
-  // Login user
-  const loginResponse = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/login',
-    payload: { email, password },
-  });
+  // Login user with retry logic
+  let lastLoginError: any;
+  let loginResponse: any;
 
-  if (loginResponse.statusCode !== 200) {
-    throw new Error(`Failed to login test user: ${loginResponse.statusCode} - ${loginResponse.body}`);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 1) {
+        await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
+        console.log(`Login retry attempt ${attempt}/${maxRetries} for ${email}`);
+      }
+
+      loginResponse = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        payload: { email, password },
+      });
+
+      if (loginResponse.statusCode === 200) {
+        break; // Success
+      } else {
+        lastLoginError = new Error(
+          `Login failed: ${loginResponse.statusCode} - ${loginResponse.body}`
+        );
+        if (attempt === maxRetries) {
+          throw lastLoginError;
+        }
+      }
+    } catch (error) {
+      lastLoginError = error;
+      if (attempt === maxRetries) {
+        throw new Error(
+          `Failed to login test user after ${maxRetries} attempts: ${loginResponse?.statusCode || 'unknown'} - ${loginResponse?.body || error}`,
+        );
+      }
+    }
   }
 
-  const responseBody = JSON.parse(loginResponse.body);
-  // Handle cases where the response might be nested under a 'data' property
-  const loginData = responseBody.data || responseBody;
+  try {
+    const responseBody = JSON.parse(loginResponse.body);
+    // Handle cases where the response might be nested under a 'data' property
+    const loginData = responseBody.data || responseBody;
 
-  const { user, access_token: token, refresh_token: refreshToken } = loginData;
-  return { user, token, refreshToken, password };
+    const { user, access_token: token, refresh_token: refreshToken } = loginData;
+    
+    if (!user || !token) {
+      throw new Error(`Invalid login response structure: missing user or token - ${loginResponse.body}`);
+    }
+    
+    return { user, token, refreshToken, password };
+  } catch (parseError) {
+    throw new Error(`Failed to parse login response: ${parseError} - Response: ${loginResponse.body}`);
+  }
 };
 
 

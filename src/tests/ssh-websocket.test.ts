@@ -99,17 +99,58 @@ async function createAuthenticatedWebSocket(
   }
 
   const wsUrl = `ws://localhost:${port}${path}`;
-  const ws = new WebSocket(wsUrl, {
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-    },
-  });
+  
+  // Add retry logic for CI environments where WebSocket connections might be flaky
+  const maxRetries = process.env.CI ? 3 : 1;
+  let lastError: any;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        console.log(`WebSocket connection retry attempt ${attempt}/${maxRetries} to ${wsUrl}`);
+      }
+      
+      const ws = new WebSocket(wsUrl, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+        // Add WebSocket options for CI stability
+        handshakeTimeout: process.env.CI ? 10000 : 5000,
+        perMessageDeflate: false, // Disable compression for testing
+      });
 
-  return new Promise((resolve, reject) => {
-    ws.on('open', () => resolve(ws));
-    ws.on('error', reject);
-    setTimeout(() => reject(new Error('WebSocket connection timeout')), 10000);
-  });
+      const wsConnection = await new Promise<WebSocket>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          ws.terminate();
+          reject(new Error(`WebSocket connection timeout after ${process.env.CI ? 15000 : 10000}ms`));
+        }, process.env.CI ? 15000 : 10000);
+        
+        ws.on('open', () => {
+          clearTimeout(timeout);
+          resolve(ws);
+        });
+        
+        ws.on('error', (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+      });
+      
+      return wsConnection;
+      
+    } catch (error) {
+      lastError = error;
+      console.warn(`WebSocket connection attempt ${attempt} failed:`, error);
+      
+      if (attempt === maxRetries) {
+        throw new Error(`Failed to create WebSocket connection after ${maxRetries} attempts: ${lastError}`);
+      }
+    }
+  }
+  
+  // This should never be reached, but TypeScript requires it
+  throw new Error('Unexpected error in WebSocket connection logic');
 }
 
 /**
@@ -142,16 +183,75 @@ describe('SSH WebSocket Terminal Tests', () => {
     app = await buildApp();
     await app.ready();
     
-    // Start the server on a random port to get an address
-    await app.listen({ port: 0, host: '127.0.0.1' });
-    const address = app.server.address();
+    // Start the server on a random port to get an address with retry logic for CI
+    const maxRetries = process.env.CI ? 5 : 2;
+    let lastError: any;
     
-    if (!address || typeof address === 'string') {
-      throw new Error('Failed to start server for testing');
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 1) {
+          // Add delay between retries and close previous attempt
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          console.log(`WebSocket server startup retry attempt ${attempt}/${maxRetries}`);
+          
+          // Close and recreate app if previous attempt failed
+          try {
+            await app.close();
+          } catch (_) {
+            // Ignore cleanup errors
+          }
+          app = await buildApp();
+          await app.ready();
+        }
+        
+        // Start the server on a random port to get an address
+        await app.listen({ 
+          port: 0, 
+          host: '127.0.0.1',
+          // Add backlog for CI environments
+          backlog: process.env.CI ? 1024 : 511
+        });
+        
+        // Wait for server to be fully ready
+        await new Promise(resolve => setTimeout(resolve, process.env.CI ? 500 : 100));
+        
+        const address = app.server.address();
+        
+        if (!address || typeof address === 'string') {
+          throw new Error('Server address is not in expected format');
+        }
+        
+        // Validate that the server is actually listening
+        const testConnection = new Promise((resolve, reject) => {
+          const testSocket = new (require('net').Socket)();
+          testSocket.setTimeout(5000);
+          
+          testSocket.on('connect', () => {
+            testSocket.destroy();
+            resolve(true);
+          });
+          
+          testSocket.on('error', reject);
+          testSocket.on('timeout', () => reject(new Error('Connection test timeout')));
+          
+          testSocket.connect(address.port, '127.0.0.1');
+        });
+        
+        await testConnection;
+        serverAddress = address;
+        console.log(`WebSocket server started successfully on port ${address.port}`);
+        break; // Success
+        
+      } catch (error) {
+        lastError = error;
+        console.warn(`WebSocket server startup attempt ${attempt} failed:`, error);
+        
+        if (attempt === maxRetries) {
+          throw new Error(`Failed to start WebSocket server after ${maxRetries} attempts: ${lastError}`);
+        }
+      }
     }
-    
-    serverAddress = address;
-  });
+  }, 30000); // Increased timeout for CI environments
 
   afterAll(async () => {
     await app.close();

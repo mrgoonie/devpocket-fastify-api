@@ -289,6 +289,69 @@ export async function setupRoutes(fastify: FastifyInstance) {
             }
           });
         });
+
+        // Mock WebSocket route for terminal connections
+        fastify.get('/terminal/ws', { 
+          websocket: true,
+          preHandler: [mockAuth]
+        }, (connection, req) => {
+          // Mock WebSocket connection handler
+          const authUser = (req as AuthenticatedRequest).authUser;
+          
+          connection.socket.on('message', (message) => {
+            try {
+              const data = JSON.parse(message.toString());
+              
+              // Mock responses based on message type
+              switch (data.type) {
+                case 'connect':
+                  connection.socket.send(JSON.stringify({
+                    type: 'connected',
+                    payload: { 
+                      session_id: `mock_session_${authUser.userId}_${Date.now()}` 
+                    }
+                  }));
+                  break;
+                  
+                case 'command':
+                  connection.socket.send(JSON.stringify({
+                    type: 'output',
+                    payload: { 
+                      output: `Mock output for: ${data.payload?.command || 'unknown command'}\n` 
+                    }
+                  }));
+                  break;
+                  
+                case 'disconnect':
+                  connection.socket.send(JSON.stringify({
+                    type: 'disconnected',
+                    payload: {}
+                  }));
+                  connection.socket.close();
+                  break;
+                  
+                default:
+                  connection.socket.send(JSON.stringify({
+                    type: 'error',
+                    payload: { error: `Unknown message type: ${data.type}` }
+                  }));
+              }
+            } catch (error) {
+              connection.socket.send(JSON.stringify({
+                type: 'error',
+                payload: { error: 'Invalid message format' }
+              }));
+            }
+          });
+          
+          connection.socket.on('close', () => {
+            console.log('WebSocket connection closed');
+          });
+          
+          connection.socket.on('error', (error) => {
+            console.error('WebSocket error:', error);
+          });
+        });
       }, { prefix: '/' });
     }
 
