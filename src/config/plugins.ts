@@ -50,7 +50,7 @@ export async function setupPlugins(fastify: FastifyInstance) {
       },
       servers: [
         {
-          url: config.isDevelopment ? `http://localhost:${config.PORT}` : 'https://api.devpocket.com',
+          url: config.isDevelopment ? config.FRONTEND_URL : 'https://api.devpocket.com',
           description: config.isDevelopment ? 'Development server' : 'Production server',
         },
       ],

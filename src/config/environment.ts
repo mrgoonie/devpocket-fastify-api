@@ -20,7 +20,7 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   REVENUECAT_WEBHOOK_SECRET: z.string().optional(),
   FROM_EMAIL: z.string().email().default('noreply@devpocket.com'),
-  FRONTEND_URL: z.string().url().default('https://devpocket.com'),
+  FRONTEND_URL: z.string().url().default('https://api.devpocket.com'),
 });
 
 // Validate environment variables
