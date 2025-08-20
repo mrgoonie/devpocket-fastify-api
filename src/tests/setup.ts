@@ -30,7 +30,7 @@ import { prisma, disconnectDatabase } from '@/shared/database/client.js';
 // Database connection verification
 async function verifyDatabaseConnection(): Promise<void> {
   const maxRetries = process.env.CI ? 5 : 3;
-  let lastError: any;
+  let lastError: unknown;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -118,7 +118,7 @@ async function resetDatabaseInternal(): Promise<void> {
     
     // Add retry logic for CI environments where database operations might be slower
     const maxRetries = process.env.CI ? 3 : 1;
-    let lastError: any;
+    let lastError: unknown;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {

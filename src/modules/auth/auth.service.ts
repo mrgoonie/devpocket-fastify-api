@@ -11,9 +11,15 @@ const REFRESH_TOKEN_EXPIRES_IN_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const PASSWORD_RESET_EXPIRES_IN_MS = 60 * 60 * 1000; // 1 hour
 const EMAIL_VERIFICATION_EXPIRES_IN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+// Email service interface for type safety
+interface EmailService {
+  sendWelcomeEmail(email: string, username: string, token: string): Promise<void>;
+  sendPasswordResetEmail(email: string, username: string, token: string): Promise<void>;
+}
+
 export class AuthService {
   // Pre-import email service to avoid dynamic imports during transactions
-  private static emailService: any = null;
+  private static emailService: EmailService | null = null;
   
   // Initialize email service
   private static async getEmailService() {
@@ -74,12 +80,13 @@ export class AuthService {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await operation();
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Handle Prisma P2034 (Transaction conflict) errors
-        if (error?.code === 'P2034' && attempt < maxRetries) {
+        const prismaError = error as { code?: string; message?: string };
+        if (prismaError?.code === 'P2034' && attempt < maxRetries) {
           const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff
           logger.warn(`Database transaction conflict (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms`, {
-            error: error.message
+            error: prismaError.message || String(error)
           });
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;

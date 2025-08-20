@@ -4,6 +4,7 @@ import { authRoutes } from '@/modules/auth/auth.routes.js';
 import { paymentRoutes } from '@/modules/payment/payment.routes.js';
 import { healthRoutes } from '@/shared/health/health.routes.js';
 import { AuthenticatedRequest } from '@/modules/auth/auth.middleware.js';
+import { logger } from '@/shared/logger.js';
 
 // Define body types for clarity in mock routes
 interface SSHProfileCreateBody {
@@ -336,7 +337,7 @@ export async function setupRoutes(fastify: FastifyInstance) {
                     payload: { error: `Unknown message type: ${data.type}` }
                   }));
               }
-            } catch (error) {
+            } catch (_error) {
               connection.socket.send(JSON.stringify({
                 type: 'error',
                 payload: { error: 'Invalid message format' }
@@ -345,11 +346,11 @@ export async function setupRoutes(fastify: FastifyInstance) {
           });
           
           connection.socket.on('close', () => {
-            console.log('WebSocket connection closed');
+            logger.debug('WebSocket connection closed');
           });
           
           connection.socket.on('error', (error) => {
-            console.error('WebSocket error:', error);
+            logger.error('WebSocket error:', error);
           });
         });
       }, { prefix: '/' });

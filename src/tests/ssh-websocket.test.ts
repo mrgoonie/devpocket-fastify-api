@@ -5,6 +5,7 @@ import { createTestUserAndLogin } from './helper.js';
 import { cleanupTestData } from './setup.js';
 import { AuthType } from '@prisma/client';
 import WebSocket from 'ws';
+import { Socket } from 'net';
 
 // Define interfaces for API responses
 interface ApiResponse<T> {
@@ -102,12 +103,13 @@ async function createAuthenticatedWebSocket(
   
   // Add retry logic for CI environments where WebSocket connections might be flaky
   const maxRetries = process.env.CI ? 3 : 1;
-  let lastError: any;
+  let lastError: unknown;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 1) {
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        // eslint-disable-next-line no-console
         console.log(`WebSocket connection retry attempt ${attempt}/${maxRetries} to ${wsUrl}`);
       }
       
@@ -141,6 +143,7 @@ async function createAuthenticatedWebSocket(
       
     } catch (error) {
       lastError = error;
+      // eslint-disable-next-line no-console
       console.warn(`WebSocket connection attempt ${attempt} failed:`, error);
       
       if (attempt === maxRetries) {
@@ -185,13 +188,14 @@ describe('SSH WebSocket Terminal Tests', () => {
     
     // Start the server on a random port to get an address with retry logic for CI
     const maxRetries = process.env.CI ? 5 : 2;
-    let lastError: any;
+    let lastError: unknown;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         if (attempt > 1) {
           // Add delay between retries and close previous attempt
           await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          // eslint-disable-next-line no-console
           console.log(`WebSocket server startup retry attempt ${attempt}/${maxRetries}`);
           
           // Close and recreate app if previous attempt failed
@@ -223,7 +227,7 @@ describe('SSH WebSocket Terminal Tests', () => {
         
         // Validate that the server is actually listening
         const testConnection = new Promise((resolve, reject) => {
-          const testSocket = new (require('net').Socket)();
+          const testSocket = new Socket();
           testSocket.setTimeout(5000);
           
           testSocket.on('connect', () => {
@@ -239,11 +243,13 @@ describe('SSH WebSocket Terminal Tests', () => {
         
         await testConnection;
         serverAddress = address;
+        // eslint-disable-next-line no-console
         console.log(`WebSocket server started successfully on port ${address.port}`);
         break; // Success
         
       } catch (error) {
         lastError = error;
+        // eslint-disable-next-line no-console
         console.warn(`WebSocket server startup attempt ${attempt} failed:`, error);
         
         if (attempt === maxRetries) {

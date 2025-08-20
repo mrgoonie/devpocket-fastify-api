@@ -3,6 +3,7 @@ import { Response } from 'light-my-request';
 import { faker } from '@faker-js/faker';
 import { buildApp } from '../app.js';
 import { UserResponse } from '../modules/auth/auth.schema.js';
+import { logger } from '../shared/logger.js';
 
 // Track test app instances for proper cleanup
 const testAppInstances = new Set<FastifyInstance>();
@@ -59,28 +60,36 @@ export const createTestUserAndLogin = async (
   const maxRetries = process.env.CI ? 5 : 3; // Increased retries for CI
   const retryDelay = process.env.CI ? 2000 : 500; // Increased delay for CI
   
-  let lastRegisterError: any;
-  let registerResponse: any;
+  let lastRegisterError: unknown;
+  let registerResponse: Response | undefined;
 
   // Register user with retry logic
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 1) {
         await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
-        console.log(`Registration retry attempt ${attempt}/${maxRetries} for ${email}`);
+        if (process.env.CI) {
+          logger.info(`Registration retry attempt ${attempt}/${maxRetries} for ${email}`);
+        }
       }
 
-      console.log(`Attempting to register user: ${email} (attempt ${attempt}/${maxRetries})`);
+      if (process.env.CI) {
+        logger.info(`Attempting to register user: ${email} (attempt ${attempt}/${maxRetries})`);
+      }
       registerResponse = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/register',
         payload: userPayload,
       });
 
-      console.log(`Registration response: ${registerResponse.statusCode} - ${registerResponse.body}`);
+      if (process.env.CI) {
+        logger.info(`Registration response: ${registerResponse.statusCode} - ${registerResponse.body}`);
+      }
 
       if (registerResponse.statusCode === 201) {
-        console.log(`User registration successful for ${email}`);
+        if (process.env.CI) {
+          logger.info(`User registration successful for ${email}`);
+        }
         break; // Success
       } else {
         lastRegisterError = new Error(
@@ -92,7 +101,9 @@ export const createTestUserAndLogin = async (
       }
     } catch (error) {
       lastRegisterError = error;
-      console.error(`Registration attempt ${attempt} failed:`, error);
+      if (process.env.CI) {
+        logger.error(`Registration attempt ${attempt} failed:`, error);
+      }
       if (attempt === maxRetries) {
         throw new Error(
           `Failed to register test user after ${maxRetries} attempts: ${registerResponse?.statusCode || 'unknown'} - ${registerResponse?.body || error}`,
@@ -107,7 +118,7 @@ export const createTestUserAndLogin = async (
   // Verify user is properly persisted in database with password hash before attempting login
   const maxWaitAttempts = process.env.CI ? 15 : 10; // Increased wait attempts
   let userFound = false;
-  let registeredUser: any = null;
+  let registeredUser: { id: string; email: string; username: string; password_hash: string; created_at: Date } | null = null;
   
   for (let waitAttempt = 1; waitAttempt <= maxWaitAttempts; waitAttempt++) {
     try {
@@ -129,21 +140,29 @@ export const createTestUserAndLogin = async (
       });
       
       if (registeredUser && registeredUser.password_hash) {
-        console.log(`User found in database with password hash: ${email} (attempt ${waitAttempt}/${maxWaitAttempts})`);
+        if (process.env.CI) {
+          logger.info(`User found in database with password hash: ${email} (attempt ${waitAttempt}/${maxWaitAttempts})`);
+        }
         userFound = true;
         break;
       } else if (registeredUser && !registeredUser.password_hash) {
         // User exists but password hash is missing - this shouldn't happen
-        console.warn(`User found but password hash missing: ${email} (attempt ${waitAttempt}/${maxWaitAttempts})`);
+        if (process.env.CI) {
+          logger.warn(`User found but password hash missing: ${email} (attempt ${waitAttempt}/${maxWaitAttempts})`);
+        }
         const waitTime = 200 * waitAttempt;
         await new Promise(resolve => setTimeout(resolve, waitTime));
       } else {
         const waitTime = 200 * waitAttempt;
-        console.log(`User not yet in database, waiting ${waitTime}ms (attempt ${waitAttempt}/${maxWaitAttempts})`);
+        if (process.env.CI) {
+          logger.info(`User not yet in database, waiting ${waitTime}ms (attempt ${waitAttempt}/${maxWaitAttempts})`);
+        }
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     } catch (dbError) {
-      console.warn(`Database check failed (attempt ${waitAttempt}):`, dbError);
+      if (process.env.CI) {
+        logger.warn(`Database check failed (attempt ${waitAttempt}):`, dbError);
+      }
       await new Promise(resolve => setTimeout(resolve, 200 * waitAttempt));
     }
   }
@@ -154,13 +173,13 @@ export const createTestUserAndLogin = async (
   
   // Add extra delay in CI to ensure all database replicas are synchronized
   if (process.env.CI) {
-    console.log(`CI environment detected - adding extra 2s delay before login for database synchronization`);
+    logger.info(`CI environment detected - adding extra 2s delay before login for database synchronization`);
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
 
   // Login user with retry logic and exponential backoff
-  let lastLoginError: any;
-  let loginResponse: any;
+  let lastLoginError: unknown;
+  let loginResponse: Response | undefined;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -168,26 +187,36 @@ export const createTestUserAndLogin = async (
         // Exponential backoff with jitter
         const backoffDelay = retryDelay * Math.pow(2, attempt - 1) + Math.random() * 1000;
         await new Promise(resolve => setTimeout(resolve, backoffDelay));
-        console.log(`Login retry attempt ${attempt}/${maxRetries} for ${email} after ${backoffDelay}ms delay`);
+        if (process.env.CI) {
+          logger.info(`Login retry attempt ${attempt}/${maxRetries} for ${email} after ${backoffDelay}ms delay`);
+        }
       }
 
-      console.log(`Attempting to login user: ${email} (attempt ${attempt}/${maxRetries})`);
+      if (process.env.CI) {
+        logger.info(`Attempting to login user: ${email} (attempt ${attempt}/${maxRetries})`);
+      }
       loginResponse = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/login',
         payload: { email, password },
       });
 
-      console.log(`Login response: ${loginResponse.statusCode} - ${loginResponse.body}`);
+      if (process.env.CI) {
+        logger.info(`Login response: ${loginResponse.statusCode} - ${loginResponse.body}`);
+      }
 
       if (loginResponse.statusCode === 200) {
-        console.log(`User login successful for ${email}`);
+        if (process.env.CI) {
+          logger.info(`User login successful for ${email}`);
+        }
         break; // Success
       } else {
         lastLoginError = new Error(
           `Login failed: ${loginResponse.statusCode} - ${loginResponse.body}`
         );
-        console.error(`Login attempt ${attempt} failed for ${email}:`, lastLoginError.message);
+        if (process.env.CI) {
+          logger.error(`Login attempt ${attempt} failed for ${email}:`, (lastLoginError as Error).message);
+        }
         
         // If we're getting 401, verify the user still exists with correct password hash
         if (loginResponse.statusCode === 401 && attempt < maxRetries) {
@@ -195,7 +224,9 @@ export const createTestUserAndLogin = async (
             where: { email },
             select: { id: true, email: true, password_hash: true }
           });
-          console.log(`User verification after 401: ${userCheck ? 'exists' : 'not found'}, has password: ${userCheck?.password_hash ? 'yes' : 'no'}`);
+          if (process.env.CI) {
+            logger.info(`User verification after 401: ${userCheck ? 'exists' : 'not found'}, has password: ${userCheck?.password_hash ? 'yes' : 'no'}`);
+          }
         }
         
         if (attempt === maxRetries) {
@@ -204,13 +235,19 @@ export const createTestUserAndLogin = async (
       }
     } catch (error) {
       lastLoginError = error;
-      console.error(`Login attempt ${attempt} failed for ${email}:`, error);
+      if (process.env.CI) {
+        logger.error(`Login attempt ${attempt} failed for ${email}:`, error);
+      }
       if (attempt === maxRetries) {
         throw new Error(
           `Failed to login test user after ${maxRetries} attempts: ${loginResponse?.statusCode || 'unknown'} - ${loginResponse?.body || error}`,
         );
       }
     }
+  }
+
+  if (!loginResponse) {
+    throw new Error('Login response is undefined after all retry attempts');
   }
 
   try {
