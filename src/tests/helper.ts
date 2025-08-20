@@ -101,9 +101,35 @@ export const createTestUserAndLogin = async (
     }
   }
 
-  // Extended delay to ensure user is properly persisted before login, especially in CI
-  console.log(`Waiting ${process.env.CI ? 500 : 50}ms before login attempt for ${email}`);
-  await new Promise(resolve => setTimeout(resolve, process.env.CI ? 500 : 50));
+  // Verify user is properly persisted in database before attempting login
+  const maxWaitAttempts = process.env.CI ? 10 : 5;
+  let userFound = false;
+  
+  for (let waitAttempt = 1; waitAttempt <= maxWaitAttempts; waitAttempt++) {
+    try {
+      const { prisma } = await import('../shared/database/client.js');
+      const registeredUser = await prisma.user.findUnique({
+        where: { email }
+      });
+      
+      if (registeredUser) {
+        console.log(`User found in database: ${email} (attempt ${waitAttempt}/${maxWaitAttempts})`);
+        userFound = true;
+        break;
+      } else {
+        const waitTime = 100 * waitAttempt;
+        console.log(`User not yet in database, waiting ${waitTime}ms (attempt ${waitAttempt}/${maxWaitAttempts})`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    } catch (dbError) {
+      console.warn(`Database check failed (attempt ${waitAttempt}):`, dbError);
+      await new Promise(resolve => setTimeout(resolve, 100 * waitAttempt));
+    }
+  }
+  
+  if (!userFound) {
+    throw new Error(`User not found in database after registration: ${email}`);
+  }
 
   // Login user with retry logic
   let lastLoginError: any;

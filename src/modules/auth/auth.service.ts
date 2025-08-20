@@ -12,6 +12,22 @@ const PASSWORD_RESET_EXPIRES_IN_MS = 60 * 60 * 1000; // 1 hour
 const EMAIL_VERIFICATION_EXPIRES_IN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export class AuthService {
+  // Pre-import email service to avoid dynamic imports during transactions
+  private static emailService: any = null;
+  
+  // Initialize email service
+  private static async getEmailService() {
+    if (!this.emailService) {
+      try {
+        const { EmailService } = await import('@/shared/email/email.service.js');
+        this.emailService = EmailService;
+      } catch (error) {
+        logger.warn('Failed to load email service:', error);
+      }
+    }
+    return this.emailService;
+  }
+
   // Hash password using bcrypt
   static async hashPassword(password: string): Promise<string> {
     try {
@@ -49,6 +65,31 @@ export class AuthService {
     };
   }
 
+  // Retry mechanism for database conflicts
+  private static async retryOperation<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 100
+  ): Promise<T> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        // Handle Prisma P2034 (Transaction conflict) errors
+        if (error?.code === 'P2034' && attempt < maxRetries) {
+          const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff
+          logger.warn(`Database transaction conflict (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms`, {
+            error: error.message
+          });
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error('Max retries exceeded');
+  }
+
   // Register new user
   static async register(input: RegisterInput): Promise<UserResponse> {
     try {
@@ -74,62 +115,70 @@ export class AuthService {
       // Hash password
       const hashedPassword = await this.hashPassword(input.password);
 
-      // Use a transaction to ensure all related data is created atomically
-      const user = await prisma.$transaction(async (tx) => {
-        // Create user
-        const newUser = await tx.user.create({
-          data: {
-            email: input.email,
-            username: input.username,
-            password_hash: hashedPassword,
-            email_verified: false,
-          },
+      // Use a transaction with retry logic to ensure all related data is created atomically
+      const result = await this.retryOperation(async () => {
+        return await prisma.$transaction(async (tx) => {
+          // Create user
+          const newUser = await tx.user.create({
+            data: {
+              email: input.email,
+              username: input.username,
+              password_hash: hashedPassword,
+              email_verified: false,
+            },
+          });
+
+          // Create a free subscription for the new user
+          await tx.subscription.create({
+            data: {
+              user_id: newUser.id,
+              plan_type: 'FREE',
+              status: 'ACTIVE',
+              started_at: new Date(),
+              expires_at: null, // Free plan does not expire
+            },
+          });
+
+          // Create usage limits for the new user
+          await tx.usageLimits.create({
+            data: {
+              user_id: newUser.id,
+              plan_type: 'FREE',
+              reset_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+            },
+          });
+
+          // Create email verification token
+          const verificationToken = this.generateSecureToken();
+          await tx.emailVerificationToken.create({
+            data: {
+              user_id: newUser.id,
+              token: verificationToken,
+              expires_at: new Date(Date.now() + EMAIL_VERIFICATION_EXPIRES_IN_MS),
+            },
+          });
+
+          return { user: newUser, verificationToken };
+        }, {
+          isolationLevel: 'Serializable', // Use serializable isolation for registration
+          timeout: 10000, // 10 second timeout
         });
-
-        // Create a free subscription for the new user
-        await tx.subscription.create({
-          data: {
-            user_id: newUser.id,
-            plan_type: 'FREE',
-            status: 'ACTIVE',
-            started_at: new Date(),
-            expires_at: null, // Free plan does not expire
-          },
-        });
-
-        // Create usage limits for the new user
-        await tx.usageLimits.create({
-          data: {
-            user_id: newUser.id,
-            plan_type: 'FREE',
-            reset_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-          },
-        });
-
-        // Create email verification token
-        const verificationToken = this.generateSecureToken();
-        await tx.emailVerificationToken.create({
-          data: {
-            user_id: newUser.id,
-            token: verificationToken,
-            expires_at: new Date(Date.now() + EMAIL_VERIFICATION_EXPIRES_IN_MS),
-          },
-        });
-
-        // Send verification email (outside transaction)
-        try {
-          const { EmailService } = await import('@/shared/email/email.service.js');
-          await EmailService.sendWelcomeEmail(newUser.email, newUser.username, verificationToken);
-        } catch (error) {
-          logger.warn('Failed to send welcome email:', error);
-        }
-
-        return newUser;
       });
 
-      logger.info(`User registered: ${user.email}`, { userId: user.id });
+      logger.info(`User registered: ${result.user.email}`, { userId: result.user.id });
 
-      return this.formatUserResponse(user);
+      // Send verification email OUTSIDE of transaction
+      try {
+        const emailService = await this.getEmailService();
+        if (emailService) {
+          await emailService.sendWelcomeEmail(result.user.email, result.user.username, result.verificationToken);
+        }
+      } catch (error) {
+        logger.warn('Failed to send welcome email (non-blocking):', error);
+        // Email failure should not affect user registration
+      }
+
+      return this.formatUserResponse(result.user);
     } catch (error) {
       logger.error('Error registering user:', error);
       throw error;
@@ -139,55 +188,63 @@ export class AuthService {
   // Authenticate user and create session
   static async login(input: LoginInput): Promise<{ user: UserResponse; session: { id: string; token: string } }> {
     try {
-      // Find user by email
-      const user = await prisma.user.findUnique({
-        where: { email: input.email },
-      });
-
-      if (!user) {
-        throw new Error('Invalid email or password');
-      }
-
-      // Verify password
-      const isValidPassword = await this.verifyPassword(input.password, user.password_hash);
-      if (!isValidPassword) {
-        throw new Error('Invalid email or password');
-      }
-
-      // Create refresh token
-      const refreshToken = this.generateSecureToken();
-      
-      // Create session with transaction to ensure atomicity
-      const session = await prisma.$transaction(async (tx) => {
-        // Verify user still exists before creating session
-        const existingUser = await tx.user.findUnique({
-          where: { id: user.id }
+      // Find user by email with retry mechanism
+      const loginResult = await this.retryOperation(async () => {
+        // Find user by email
+        const user = await prisma.user.findUnique({
+          where: { email: input.email },
         });
-        
-        if (!existingUser) {
-          throw new Error('User not found during session creation');
+
+        if (!user) {
+          throw new Error('Invalid email or password');
         }
-        
-        // Create session
-        return await tx.session.create({
-          data: {
-            user_id: user.id,
-            token: refreshToken,
-            device_id: input.device_id,
-            expires_at: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_MS),
-          },
-        });
-      });
 
-      logger.info(`User logged in: ${user.email}`, { 
-        userId: user.id, 
-        sessionId: session.id,
+        // Verify password
+        const isValidPassword = await this.verifyPassword(input.password, user.password_hash);
+        if (!isValidPassword) {
+          throw new Error('Invalid email or password');
+        }
+
+        // Create refresh token
+        const refreshToken = this.generateSecureToken();
+        
+        // Create session with transaction to ensure atomicity
+        const session = await prisma.$transaction(async (tx) => {
+          // Verify user still exists before creating session
+          const existingUser = await tx.user.findUnique({
+            where: { id: user.id }
+          });
+          
+          if (!existingUser) {
+            throw new Error('User not found during session creation');
+          }
+          
+          // Create session
+          return await tx.session.create({
+            data: {
+              user_id: user.id,
+              token: refreshToken,
+              device_id: input.device_id,
+              expires_at: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_MS),
+            },
+          });
+        }, {
+          isolationLevel: 'ReadCommitted', // Use read committed for login operations
+          timeout: 5000, // 5 second timeout
+        });
+
+        return { user, session };
+      }, 5); // More retries for login due to higher concurrency
+
+      logger.info(`User logged in: ${loginResult.user.email}`, { 
+        userId: loginResult.user.id, 
+        sessionId: loginResult.session.id,
         deviceId: input.device_id 
       });
 
       return {
-        user: this.formatUserResponse(user),
-        session,
+        user: this.formatUserResponse(loginResult.user),
+        session: loginResult.session,
       };
     } catch (error) {
       logger.error('Error logging in user:', error);
@@ -288,12 +345,14 @@ export class AuthService {
 
       logger.info(`Password reset requested: ${user.email}`, { userId: user.id });
 
-      // Send password reset email
+      // Send password reset email OUTSIDE of transaction
       try {
-        const { EmailService } = await import('@/shared/email/email.service.js');
-        await EmailService.sendPasswordResetEmail(user.email, user.username, resetToken);
+        const emailService = await this.getEmailService();
+        if (emailService) {
+          await emailService.sendPasswordResetEmail(user.email, user.username, resetToken);
+        }
       } catch (error) {
-        logger.warn('Failed to send password reset email:', error);
+        logger.warn('Failed to send password reset email (non-blocking):', error);
         // Don't fail the request if email fails
       }
     } catch (error) {

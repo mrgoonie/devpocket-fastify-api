@@ -153,6 +153,80 @@ try {
 }
 ```
 
+## Database Transaction Management
+
+### Transaction Isolation Levels
+The codebase implements different isolation levels based on operation criticality:
+
+```typescript
+// Serializable for critical operations (Registration)
+await prisma.$transaction(async (tx) => {
+  // Critical operations requiring full isolation
+}, {
+  isolationLevel: 'Serializable',
+  timeout: 10000, // 10 seconds
+});
+
+// ReadCommitted for standard operations (Login)
+await prisma.$transaction(async (tx) => {
+  // Standard operations with good performance
+}, {
+  isolationLevel: 'ReadCommitted', 
+  timeout: 5000, // 5 seconds
+});
+```
+
+### Retry Mechanism Pattern
+Database operations include retry logic for handling transaction conflicts:
+
+```typescript
+// Retry mechanism for database conflicts
+private static async retryOperation<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 100
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      // Handle Prisma P2034 (Transaction conflict) errors
+      if (error?.code === 'P2034' && attempt < maxRetries) {
+        const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff
+        logger.warn(`Database transaction conflict (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+```
+
+### Email Service Decoupling Pattern
+Email operations are decoupled from database transactions to prevent blocking:
+
+```typescript
+// Database transaction (atomic)
+const result = await this.retryOperation(async () => {
+  return await prisma.$transaction(async (tx) => {
+    // Database operations only
+    return { user: newUser, verificationToken };
+  });
+});
+
+// Email operations (non-blocking, outside transaction)
+try {
+  const emailService = await this.getEmailService();
+  if (emailService) {
+    await emailService.sendWelcomeEmail(user.email, user.username, token);
+  }
+} catch (error) {
+  logger.warn('Failed to send email (non-blocking):', error);
+  // Email failure should not affect core operation
+}
+```
+
 ### Error Response Format
 ```typescript
 interface ErrorResponse {
@@ -217,6 +291,48 @@ describe('Module Name', () => {
 - **Mocking**: Email service mocked to prevent actual sends
 - **Database**: Transactional tests with automatic cleanup
 - **Timeouts**: 30s test timeout, 60s hook timeout
+
+### CI/CD Test Reliability Patterns
+Enhanced test patterns for reliable CI/CD execution:
+
+```typescript
+// Environment-aware retry configuration
+const maxRetries = process.env.CI ? 3 : 1;
+const retryDelay = process.env.CI ? 1500 : 100;
+
+// Database state verification pattern
+for (let waitAttempt = 1; waitAttempt <= maxWaitAttempts; waitAttempt++) {
+  const registeredUser = await prisma.user.findUnique({
+    where: { email }
+  });
+  
+  if (registeredUser) {
+    break; // User found, proceed
+  } else {
+    const waitTime = 100 * waitAttempt;
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+}
+
+// Database connection verification in test setup
+async function verifyDatabaseConnection(): Promise<void> {
+  const maxRetries = process.env.CI ? 5 : 3;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await prisma.$queryRaw`SELECT 1 as connected`;
+      await prisma.$queryRaw`SELECT current_database()`;
+      return; // Success
+    } catch (error) {
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+```
 
 ## Input/Output Validation
 
@@ -300,7 +416,17 @@ interface PaginatedResponse<T> {
 ### Development Workflow
 1. Write tests first (TDD approach encouraged)
 2. Implement feature with proper error handling
-3. Run linting before commits
-4. Run full test suite before push
-5. Use conventional commit messages
-6. Document API changes in changelog
+3. Use retry mechanisms for database operations prone to conflicts
+4. Decouple email services from critical database transactions
+5. Run linting before commits
+6. Run full test suite before push
+7. Use conventional commit messages
+8. Document API changes in changelog
+
+### Database Best Practices
+- Use appropriate transaction isolation levels based on operation criticality
+- Implement retry logic with exponential backoff for P2034 conflicts  
+- Keep transactions short and focused on database operations only
+- Move email/notification services outside of database transactions
+- Use database state verification in tests instead of fixed delays
+- Pre-initialize services to avoid dynamic imports during transactions
