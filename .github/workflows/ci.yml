@@ -22,10 +22,10 @@ jobs:
           POSTGRES_PASSWORD: devpocket_test
           POSTGRES_DB: devpocket-fastify-api-test
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U devpocket_test -d devpocket-fastify-api-test"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
         ports:
           - 5432:5432
       
@@ -68,15 +68,31 @@ jobs:
           echo "SSH_TEST_KEY_USER=${{ secrets.SSH_USER_2 }}" >> .env.test
           echo "SSH_TEST_PUBLIC_KEY=${{ secrets.SSH_KEY_2 }}" >> .env.test
 
+      - name: Wait for database readiness
+        run: |
+          echo "=== Waiting for PostgreSQL to be ready ==="
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U devpocket_test -d devpocket-fastify-api-test; then
+              echo "PostgreSQL is ready!"
+              break
+            else
+              echo "Attempt $i: PostgreSQL not ready, waiting 2 seconds..."
+              sleep 2
+            fi
+          done
+          
+          # Final check
+          if ! pg_isready -h localhost -p 5432 -U devpocket_test -d devpocket-fastify-api-test; then
+            echo "PostgreSQL failed to become ready after 60 seconds"
+            exit 1
+          fi
+          
       - name: Verify environment setup
         run: |
           echo "=== Environment Variables ==="
           echo "NODE_ENV: $NODE_ENV"
           echo "DATABASE_URL: postgresql://devpocket_test:devpocket_test@localhost:5432/devpocket-fastify-api-test?schema=public"
           echo "REDIS_URL: redis://localhost:6379/1"
-          echo ""
-          echo "=== Database Service Health ==="
-          pg_isready -h localhost -p 5432 -U devpocket_test || echo "PostgreSQL not ready"
           echo ""
           echo "=== Environment File Contents ==="
           cat .env.test

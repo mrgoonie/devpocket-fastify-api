@@ -27,6 +27,37 @@ import { afterAll, afterEach, beforeAll } from 'vitest';
 import { logger } from '@/shared/logger.js';
 import { prisma, disconnectDatabase } from '@/shared/database/client.js';
 
+// Database connection verification
+async function verifyDatabaseConnection(): Promise<void> {
+  const maxRetries = process.env.CI ? 5 : 3;
+  let lastError: any;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        logger.debug(`Database connection verification attempt ${attempt}/${maxRetries}`);
+      }
+      
+      // Test basic connectivity
+      await prisma.$queryRaw`SELECT 1 as connected`;
+      
+      // Test database readiness by checking if we can query system tables
+      await prisma.$queryRaw`SELECT current_database()`;
+      
+      logger.debug('Database connection verified successfully');
+      return;
+    } catch (error) {
+      lastError = error;
+      logger.warn(`Database connection attempt ${attempt} failed:`, error);
+      
+      if (attempt === maxRetries) {
+        throw new Error(`Database connection failed after ${maxRetries} attempts: ${lastError}`);
+      }
+    }
+  }
+}
+
 // Global mock cleanup - runs after each test
 afterEach(() => {
   vi.restoreAllMocks();
@@ -35,6 +66,9 @@ afterEach(() => {
 // Setup test environment with server instance isolation
 beforeAll(async () => {
   try {
+    logger.info('Verifying database connection...');
+    await verifyDatabaseConnection();
+    
     logger.info('Resetting database for test suite...');
     await resetDatabase();
     logger.info('Database reset complete');

@@ -57,7 +57,7 @@ export const createTestUserAndLogin = async (
 
   // Add retry logic for CI environments where database operations might be slower
   const maxRetries = process.env.CI ? 3 : 1;
-  const retryDelay = process.env.CI ? 1000 : 100;
+  const retryDelay = process.env.CI ? 1500 : 100;
   
   let lastRegisterError: any;
   let registerResponse: any;
@@ -70,13 +70,17 @@ export const createTestUserAndLogin = async (
         console.log(`Registration retry attempt ${attempt}/${maxRetries} for ${email}`);
       }
 
+      console.log(`Attempting to register user: ${email} (attempt ${attempt}/${maxRetries})`);
       registerResponse = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/register',
         payload: userPayload,
       });
 
+      console.log(`Registration response: ${registerResponse.statusCode} - ${registerResponse.body}`);
+
       if (registerResponse.statusCode === 201) {
+        console.log(`User registration successful for ${email}`);
         break; // Success
       } else {
         lastRegisterError = new Error(
@@ -88,6 +92,7 @@ export const createTestUserAndLogin = async (
       }
     } catch (error) {
       lastRegisterError = error;
+      console.error(`Registration attempt ${attempt} failed:`, error);
       if (attempt === maxRetries) {
         throw new Error(
           `Failed to register test user after ${maxRetries} attempts: ${registerResponse?.statusCode || 'unknown'} - ${registerResponse?.body || error}`,
@@ -97,7 +102,8 @@ export const createTestUserAndLogin = async (
   }
 
   // Extended delay to ensure user is properly persisted before login, especially in CI
-  await new Promise(resolve => setTimeout(resolve, process.env.CI ? 200 : 50));
+  console.log(`Waiting ${process.env.CI ? 500 : 50}ms before login attempt for ${email}`);
+  await new Promise(resolve => setTimeout(resolve, process.env.CI ? 500 : 50));
 
   // Login user with retry logic
   let lastLoginError: any;
@@ -110,24 +116,30 @@ export const createTestUserAndLogin = async (
         console.log(`Login retry attempt ${attempt}/${maxRetries} for ${email}`);
       }
 
+      console.log(`Attempting to login user: ${email} (attempt ${attempt}/${maxRetries})`);
       loginResponse = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/login',
         payload: { email, password },
       });
 
+      console.log(`Login response: ${loginResponse.statusCode} - ${loginResponse.body}`);
+
       if (loginResponse.statusCode === 200) {
+        console.log(`User login successful for ${email}`);
         break; // Success
       } else {
         lastLoginError = new Error(
           `Login failed: ${loginResponse.statusCode} - ${loginResponse.body}`
         );
+        console.error(`Login attempt ${attempt} failed for ${email}:`, lastLoginError.message);
         if (attempt === maxRetries) {
           throw lastLoginError;
         }
       }
     } catch (error) {
       lastLoginError = error;
+      console.error(`Login attempt ${attempt} failed for ${email}:`, error);
       if (attempt === maxRetries) {
         throw new Error(
           `Failed to login test user after ${maxRetries} attempts: ${loginResponse?.statusCode || 'unknown'} - ${loginResponse?.body || error}`,
