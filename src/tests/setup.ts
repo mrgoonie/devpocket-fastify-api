@@ -194,9 +194,45 @@ async function resetDatabaseInternal(): Promise<void> {
   }
 }
 
-// Helper function for tests to clean up their data (disabled to prevent race conditions)
-export async function cleanupTestData(): Promise<void> {
-  // Completely disabled to prevent foreign key violations during test execution
-  // Database is only reset once per test file at the beginning
+// Helper function for tests to clean up their data (selective cleanup for authentication tests)
+export async function cleanupTestData(options: { cleanAuthData?: boolean } = {}): Promise<void> {
+  // Only clean auth-related data if explicitly requested to prevent race conditions
+  if (options.cleanAuthData) {
+    try {
+      logger.debug('Cleaning up auth test data...');
+      
+      // Use transaction to ensure atomicity
+      await prisma.$transaction(async (tx) => {
+        // Clean up sessions first (foreign key dependency)
+        await tx.session.deleteMany({
+          where: {
+            created_at: {
+              // Only delete sessions created in the last 5 minutes (test sessions)
+              gte: new Date(Date.now() - 5 * 60 * 1000)
+            }
+          }
+        });
+        
+        // Clean up test users (identified by email pattern)
+        await tx.user.deleteMany({
+          where: {
+            OR: [
+              { email: { contains: 'test-' } },
+              { username: { startsWith: 'testuser_' } }
+            ]
+          }
+        });
+      }, {
+        timeout: process.env.CI ? 10000 : 5000,
+        isolationLevel: 'ReadCommitted'
+      });
+      
+      logger.debug('Auth test data cleanup complete');
+    } catch (error) {
+      logger.warn('Failed to clean up auth test data:', error);
+      // Non-critical, continue with tests
+    }
+  }
+  
   return Promise.resolve();
 }

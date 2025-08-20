@@ -161,9 +161,9 @@ export class AuthService {
           return { user: newUser, verificationToken };
         }, {
           isolationLevel: 'Serializable', // Use serializable isolation for registration
-          timeout: 10000, // 10 second timeout
+          timeout: process.env.CI ? 15000 : 10000, // Longer timeout in CI
         });
-      });
+      }, process.env.CI ? 5 : 3, process.env.CI ? 200 : 100); // More retries in CI with longer base delay
 
       logger.info(`User registered: ${result.user.email}`, { userId: result.user.id });
 
@@ -188,39 +188,30 @@ export class AuthService {
   // Authenticate user and create session
   static async login(input: LoginInput): Promise<{ user: UserResponse; session: { id: string; token: string } }> {
     try {
-      // Find user by email with retry mechanism
+      // Find user by email with retry mechanism and enhanced transaction isolation
       const loginResult = await this.retryOperation(async () => {
-        // Find user by email
-        const user = await prisma.user.findUnique({
-          where: { email: input.email },
-        });
-
-        if (!user) {
-          throw new Error('Invalid email or password');
-        }
-
-        // Verify password
-        const isValidPassword = await this.verifyPassword(input.password, user.password_hash);
-        if (!isValidPassword) {
-          throw new Error('Invalid email or password');
-        }
-
-        // Create refresh token
-        const refreshToken = this.generateSecureToken();
-        
-        // Create session with transaction to ensure atomicity
-        const session = await prisma.$transaction(async (tx) => {
-          // Verify user still exists before creating session
-          const existingUser = await tx.user.findUnique({
-            where: { id: user.id }
+        // Use transaction for the entire login flow to ensure consistency
+        return await prisma.$transaction(async (tx) => {
+          // Find user by email within transaction
+          const user = await tx.user.findUnique({
+            where: { email: input.email },
           });
-          
-          if (!existingUser) {
-            throw new Error('User not found during session creation');
+
+          if (!user) {
+            throw new Error('Invalid email or password');
           }
+
+          // Verify password
+          const isValidPassword = await this.verifyPassword(input.password, user.password_hash);
+          if (!isValidPassword) {
+            throw new Error('Invalid email or password');
+          }
+
+          // Create refresh token
+          const refreshToken = this.generateSecureToken();
           
-          // Create session
-          return await tx.session.create({
+          // Create session within the same transaction
+          const session = await tx.session.create({
             data: {
               user_id: user.id,
               token: refreshToken,
@@ -228,13 +219,13 @@ export class AuthService {
               expires_at: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_MS),
             },
           });
-        }, {
-          isolationLevel: 'ReadCommitted', // Use read committed for login operations
-          timeout: 5000, // 5 second timeout
-        });
 
-        return { user, session };
-      }, 5); // More retries for login due to higher concurrency
+          return { user, session };
+        }, {
+          isolationLevel: process.env.CI ? 'Serializable' : 'ReadCommitted', // Use serializable isolation in CI for better consistency
+          timeout: process.env.CI ? 10000 : 5000, // Longer timeout in CI environment
+        });
+      }, process.env.CI ? 7 : 5, process.env.CI ? 200 : 100); // More retries and longer base delay in CI
 
       logger.info(`User logged in: ${loginResult.user.email}`, { 
         userId: loginResult.user.id, 

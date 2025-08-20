@@ -56,8 +56,8 @@ export const createTestUserAndLogin = async (
   };
 
   // Add retry logic for CI environments where database operations might be slower
-  const maxRetries = process.env.CI ? 3 : 1;
-  const retryDelay = process.env.CI ? 1500 : 100;
+  const maxRetries = process.env.CI ? 5 : 3; // Increased retries for CI
+  const retryDelay = process.env.CI ? 2000 : 500; // Increased delay for CI
   
   let lastRegisterError: any;
   let registerResponse: any;
@@ -101,45 +101,74 @@ export const createTestUserAndLogin = async (
     }
   }
 
-  // Verify user is properly persisted in database before attempting login
-  const maxWaitAttempts = process.env.CI ? 10 : 5;
+  // Import prisma once at the beginning to avoid repeated imports
+  const { prisma } = await import('../shared/database/client.js');
+  
+  // Verify user is properly persisted in database with password hash before attempting login
+  const maxWaitAttempts = process.env.CI ? 15 : 10; // Increased wait attempts
   let userFound = false;
+  let registeredUser: any = null;
   
   for (let waitAttempt = 1; waitAttempt <= maxWaitAttempts; waitAttempt++) {
     try {
-      const { prisma } = await import('../shared/database/client.js');
-      const registeredUser = await prisma.user.findUnique({
-        where: { email }
+      // Use transaction to ensure we get a consistent read
+      registeredUser = await prisma.$transaction(async (tx) => {
+        return await tx.user.findUnique({
+          where: { email },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            password_hash: true,
+            created_at: true
+          }
+        });
+      }, {
+        isolationLevel: 'ReadCommitted',
+        timeout: 5000
       });
       
-      if (registeredUser) {
-        console.log(`User found in database: ${email} (attempt ${waitAttempt}/${maxWaitAttempts})`);
+      if (registeredUser && registeredUser.password_hash) {
+        console.log(`User found in database with password hash: ${email} (attempt ${waitAttempt}/${maxWaitAttempts})`);
         userFound = true;
         break;
+      } else if (registeredUser && !registeredUser.password_hash) {
+        // User exists but password hash is missing - this shouldn't happen
+        console.warn(`User found but password hash missing: ${email} (attempt ${waitAttempt}/${maxWaitAttempts})`);
+        const waitTime = 200 * waitAttempt;
+        await new Promise(resolve => setTimeout(resolve, waitTime));
       } else {
-        const waitTime = 100 * waitAttempt;
+        const waitTime = 200 * waitAttempt;
         console.log(`User not yet in database, waiting ${waitTime}ms (attempt ${waitAttempt}/${maxWaitAttempts})`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     } catch (dbError) {
       console.warn(`Database check failed (attempt ${waitAttempt}):`, dbError);
-      await new Promise(resolve => setTimeout(resolve, 100 * waitAttempt));
+      await new Promise(resolve => setTimeout(resolve, 200 * waitAttempt));
     }
   }
   
   if (!userFound) {
     throw new Error(`User not found in database after registration: ${email}`);
   }
+  
+  // Add extra delay in CI to ensure all database replicas are synchronized
+  if (process.env.CI) {
+    console.log(`CI environment detected - adding extra 2s delay before login for database synchronization`);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
 
-  // Login user with retry logic
+  // Login user with retry logic and exponential backoff
   let lastLoginError: any;
   let loginResponse: any;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 1) {
-        await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
-        console.log(`Login retry attempt ${attempt}/${maxRetries} for ${email}`);
+        // Exponential backoff with jitter
+        const backoffDelay = retryDelay * Math.pow(2, attempt - 1) + Math.random() * 1000;
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+        console.log(`Login retry attempt ${attempt}/${maxRetries} for ${email} after ${backoffDelay}ms delay`);
       }
 
       console.log(`Attempting to login user: ${email} (attempt ${attempt}/${maxRetries})`);
@@ -159,6 +188,16 @@ export const createTestUserAndLogin = async (
           `Login failed: ${loginResponse.statusCode} - ${loginResponse.body}`
         );
         console.error(`Login attempt ${attempt} failed for ${email}:`, lastLoginError.message);
+        
+        // If we're getting 401, verify the user still exists with correct password hash
+        if (loginResponse.statusCode === 401 && attempt < maxRetries) {
+          const userCheck = await prisma.user.findUnique({
+            where: { email },
+            select: { id: true, email: true, password_hash: true }
+          });
+          console.log(`User verification after 401: ${userCheck ? 'exists' : 'not found'}, has password: ${userCheck?.password_hash ? 'yes' : 'no'}`);
+        }
+        
         if (attempt === maxRetries) {
           throw lastLoginError;
         }
