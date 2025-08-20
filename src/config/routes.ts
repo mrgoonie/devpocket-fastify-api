@@ -22,6 +22,30 @@ interface TerminalSessionCreateBody {
 }
 
 export async function setupRoutes(fastify: FastifyInstance) {
+  // Root route for basic health check
+  fastify.get('/', {
+    schema: {
+      tags: ['Health'],
+      summary: 'Root health check',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            message: { type: 'string' },
+            status: { type: 'string' },
+            timestamp: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async () => {
+    return {
+      message: 'DevPocket API is healthy',
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+    };
+  });
+
   // API prefix
   await fastify.register(async function apiRoutes(fastify) {
     // Health routes
