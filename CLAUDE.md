@@ -88,7 +88,7 @@ During the implementation process, you will delegate tasks to the following suba
 - Use `debugger` agent to collect logs in server or github actions to analyze the summary report.
 - Use `code-reviewer` agent to review code.
 - Use `docs-manager` agent to update docs in `./docs` directory if any.
-- Whenever you want to understand the whole code base, use this command: [`repomix --ignore=docs/*,plans/*`](https://repomix.com/guide/usage) and read the output summary file.
+- Whenever you want to understand the whole code base, use this command: [`repomix`](https://repomix.com/guide/usage) and read the output summary file.
 
 ### Code Quality Guidelines
 - Don't be too harsh on code linting

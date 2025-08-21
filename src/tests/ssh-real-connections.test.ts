@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import { createTestUserAndLogin } from './helper.js';
@@ -35,13 +35,17 @@ interface TerminalSessionData {
   profile_id: string | null;
 }
 
+// CI environment detection
+const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
+const hasRealServer = !!process.env.SSH_TEST_REAL_SERVER;
+
 // SSH test configuration from environment
 const SSH_TEST_CONFIG = {
-  host: process.env.SSH_TEST_HOST || '46.250.239.227',
+  host: process.env.SSH_TEST_HOST || (isCI ? 'localhost' : '46.250.239.227'),
   port: parseInt(process.env.SSH_TEST_PORT || '22'),
   pwd: {
     username: process.env.SSH_TEST_PWD_USER || 'testpwd',
-    password: process.env.SSH_TEST_PWD_PASS || 'Test@123',
+    password: process.env.SSH_TEST_PWD_PASS || '',
   },
   key: {
     username: process.env.SSH_TEST_KEY_USER || 'testkey',
@@ -67,6 +71,9 @@ describe('SSH Real Connection Tests', () => {
   });
 
   beforeEach(async () => {
+    // Clear any existing mocks from other test files
+    vi.restoreAllMocks();
+    
     await resetDatabase();
     const authData = await createTestUserAndLogin(app);
     authToken = authData.token;
@@ -78,7 +85,10 @@ describe('SSH Real Connection Tests', () => {
     await sshConnectionManager.closeUserConnections(userId);
   });
 
-  describe('Real SSH Password Authentication', () => {
+  // Skip real connection tests in CI unless real server is configured
+  const describeRealTests = isCI && !hasRealServer ? describe.skip : describe;
+
+  describeRealTests('Real SSH Password Authentication', () => {
     // Skip these tests if SSH credentials are not available
     const skipIfNoCredentials = !SSH_TEST_CONFIG.pwd.username || !SSH_TEST_CONFIG.pwd.password 
       ? it.skip : it;
@@ -167,7 +177,7 @@ describe('SSH Real Connection Tests', () => {
     }, 30000);
   });
 
-  describe('Real SSH Key Authentication', () => {
+  describeRealTests('Real SSH Key Authentication', () => {
     // Skip these tests if SSH key credentials are not available
     const skipIfNoKeyCredentials = !SSH_TEST_CONFIG.key.username || !SSH_TEST_CONFIG.key.publicKey
       ? it.skip : it;
@@ -258,7 +268,7 @@ describe('SSH Real Connection Tests', () => {
     }, 30000);
   });
 
-  describe('SSH Command Execution', () => {
+  describeRealTests('SSH Command Execution', () => {
     const skipIfNoCredentials = !SSH_TEST_CONFIG.pwd.username || !SSH_TEST_CONFIG.pwd.password 
       ? it.skip : it;
 
@@ -288,6 +298,7 @@ describe('SSH Real Connection Tests', () => {
       expect(testConnection.error).toBeDefined();
     }, 30000);
   });
+
 
   describe('SSH Connection Management', () => {
     it('should return connection statistics', async () => {
