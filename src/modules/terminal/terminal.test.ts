@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../../app.js';
 import { createTestUserAndLogin } from '../../tests/helper.js';
-import { cleanupTestData } from '../../tests/setup.js';
+import { cleanupTestData, resetDatabase } from '../../tests/setup.js';
 import { prisma } from '../../shared/database/client.js';
 import { encryptionService } from '../../shared/encryption/encryption.service.js';
 import { AuthType, SessionStatus } from '@prisma/client';
@@ -93,7 +93,7 @@ describe('Terminal Module Integration Tests', () => {
 
   describe('SSH Profile Management', () => {
     beforeEach(async () => {
-      await cleanupTestData();
+      await resetDatabase();
       const authData = await createTestUserAndLogin(app);
       authToken = authData.token;
       // Re-establish baseline mocks for each test
@@ -331,7 +331,7 @@ describe('Terminal Module Integration Tests', () => {
 
   describe('SSH Connection Testing', () => {
     beforeEach(async () => {
-      await cleanupTestData();
+      await resetDatabase();
       const authData = await createTestUserAndLogin(app);
       authToken = authData.token;
       vi.spyOn(sshService.sshConnectionManager, 'testConnection').mockResolvedValue({ success: true, connectionTime: 123 });
@@ -398,7 +398,7 @@ describe('Terminal Module Integration Tests', () => {
 
   describe('Terminal Session Management', () => {
     beforeEach(async () => {
-      await cleanupTestData();
+      await resetDatabase();
       const authData = await createTestUserAndLogin(app);
       authToken = authData.token;
       vi.spyOn(ptyService.ptyManager, 'createSession').mockResolvedValue({ id: 'mock_session_id', userId: authData.user.id, ptyProcess: null, isActive: true, createdAt: new Date(), lastActivity: new Date() } as ptyService.PtySession);
@@ -512,7 +512,7 @@ describe('Terminal Module Integration Tests', () => {
 
   describe('Command History', () => {
     beforeEach(async () => {
-      await cleanupTestData();
+      await resetDatabase();
       const authData = await createTestUserAndLogin(app);
       authToken = authData.token;
       vi.spyOn(ptyService.ptyManager, 'createSession').mockResolvedValue({ id: 'mock_session_id', userId: authData.user.id, ptyProcess: null, isActive: true, createdAt: new Date(), lastActivity: new Date() } as ptyService.PtySession);
@@ -606,7 +606,7 @@ describe('Terminal Module Integration Tests', () => {
 
   describe('Terminal Statistics', () => {
     beforeEach(async () => {
-      await cleanupTestData();
+      await resetDatabase();
       const authData = await createTestUserAndLogin(app);
       authToken = authData.token;
       vi.spyOn(sshService.sshConnectionManager, 'getConnectionStats').mockReturnValue({ total: 1, active: 1, idle: 0, byUser: { [authData.user.id]: 1 } });

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import { createTestUserAndLogin } from './helper.js';
-import { cleanupTestData } from './setup.js';
+import { cleanupTestData, resetDatabase } from './setup.js';
 import { AuthType, SessionStatus } from '@prisma/client';
 import { sshConnectionManager } from '../modules/terminal/ssh.service.js';
 
@@ -100,7 +100,7 @@ describe('SSH Real Connection Tests', () => {
   });
 
   beforeEach(async () => {
-    await cleanupTestData();
+    await resetDatabase();
     const authData = await createTestUserAndLogin(app);
     authToken = authData.token;
     userId = authData.user.id;

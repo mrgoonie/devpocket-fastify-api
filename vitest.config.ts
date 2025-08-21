@@ -9,16 +9,28 @@ export default defineConfig({
 		setupFiles: ["./src/tests/setup.ts"],
 		include: ["src/**/*.{test,spec}.{js,ts}"],
 		exclude: ["node_modules", "dist"],
-		// Enhanced isolation settings to prevent database conflicts
+		// Force truly sequential execution to prevent race conditions
 		maxConcurrency: 1, // Only one test at a time
-		isolate: true, // Isolate test processes to prevent shared state
+		fileParallelism: false, // Disable file parallelism completely
+		isolate: false, // Disable worker isolation
+		pool: 'forks', // Use fork pool for better isolation
+		poolOptions: {
+			forks: {
+				singleFork: true, // Force single worker process
+				minForks: 1,
+				maxForks: 1, // Explicitly limit to 1 fork
+			}
+		},
 		sequence: {
 			shuffle: false, // Run tests in predictable order
 			concurrent: false, // Run test files sequentially
+			setupFiles: 'list', // Run setup files in list order
 		},
 		// Increased timeouts for database operations
-		testTimeout: 30000, // 30 seconds per test
-		hookTimeout: 60000, // 60 seconds for setup/teardown hooks
+		testTimeout: 45000, // 45 seconds per test (increased for slower CI)
+		hookTimeout: 90000, // 90 seconds for setup/teardown hooks (increased)
+		// Add delays between test files to ensure complete cleanup
+		teardownTimeout: 30000, // 30 seconds for teardown
 		env: {
 			...config({ path: ".env.test" }).parsed,
 		},

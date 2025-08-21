@@ -1,6 +1,7 @@
 // Load test environment variables before any imports
 import { config } from 'dotenv';
 import path from 'path';
+import fs from 'fs/promises';
 
 // // Set environment variables for testing
 // const workerId = process.env.VITEST_WORKER_ID || '1';
@@ -94,21 +95,110 @@ afterAll(async () => {
     const { cleanupTestApps } = await import('@/tests/helper.js');
     await cleanupTestApps();
     
+    // Add delay before database disconnect to ensure all operations complete
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
     await disconnectDatabase();
+    
+    // Add delay after cleanup to ensure complete isolation between test files
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
     logger.info('Test environment cleanup complete');
   } catch (error) {
     logger.error('Test cleanup failed:', error);
   }
 });
 
-// Global mutex to prevent concurrent database operations across all test files
-let globalDatabaseMutex: Promise<void> = Promise.resolve();
+// Global mutex implementation to prevent concurrent database operations across all test files
+
+class DatabaseMutex {
+  private mutex: Promise<void> = Promise.resolve();
+  private lockFile = path.join(process.cwd(), '.test-db-lock');
+  
+  async runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const currentMutex = this.mutex;
+    let resolve: () => void;
+    
+    // Create a new promise that will be resolved when this operation completes
+    this.mutex = new Promise<void>((res) => {
+      resolve = res;
+    });
+    
+    try {
+      // Wait for previous operation to complete
+      await currentMutex;
+      
+      // Acquire file lock
+      await this.acquireFileLock();
+      
+      try {
+        // Execute the operation
+        const result = await operation();
+        return result;
+      } finally {
+        // Release file lock
+        await this.releaseFileLock();
+      }
+    } finally {
+      // Release the mutex
+      resolve!();
+    }
+  }
+  
+  private async acquireFileLock(): Promise<void> {
+    const maxAttempts = 30; // 30 seconds max wait
+    const delay = 1000; // 1 second between attempts
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        // Try to create lock file exclusively
+        await fs.writeFile(this.lockFile, process.pid.toString(), { flag: 'wx' });
+        return; // Success
+      } catch (error: any) {
+        if (error.code === 'EEXIST') {
+          // Lock file exists, check if the process is still running
+          try {
+            const pidStr = await fs.readFile(this.lockFile, 'utf8');
+            const pid = parseInt(pidStr);
+            
+            // Check if process is still running
+            try {
+              process.kill(pid, 0); // Signal 0 just checks if process exists
+              // Process exists, wait and retry
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            } catch {
+              // Process doesn't exist, remove stale lock file
+              await fs.unlink(this.lockFile);
+              continue; // Retry acquiring lock
+            }
+          } catch {
+            // Can't read lock file, remove it and retry
+            await fs.unlink(this.lockFile);
+            continue;
+          }
+        }
+        throw error; // Other errors
+      }
+    }
+    
+    throw new Error('Could not acquire database lock after 30 seconds');
+  }
+  
+  private async releaseFileLock(): Promise<void> {
+    try {
+      await fs.unlink(this.lockFile);
+    } catch {
+      // Ignore errors when releasing lock
+    }
+  }
+}
+
+const globalDatabaseMutex = new DatabaseMutex();
 
 // Complete database reset function for test isolation
 export async function resetDatabase(): Promise<void> {
-  await globalDatabaseMutex;
-  globalDatabaseMutex = resetDatabaseInternal();
-  await globalDatabaseMutex;
+  return globalDatabaseMutex.runExclusive(resetDatabaseInternal);
 }
 
 
@@ -116,80 +206,38 @@ async function resetDatabaseInternal(): Promise<void> {
   try {
     logger.debug('Starting complete database reset...');
     
-    // Add retry logic for CI environments where database operations might be slower
-    const maxRetries = process.env.CI ? 3 : 1;
-    let lastError: unknown;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        // Add delay between retries for CI stability
-        if (attempt > 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-          logger.debug(`Database reset retry attempt ${attempt}/${maxRetries}`);
-        }
-        
-        // Drop all data and reset sequences
-        await prisma.$transaction(async (tx) => {
-          // Don't terminate connections as it's causing database issues
-          // Just disable foreign key checks temporarily
-          await tx.$executeRawUnsafe('SET session_replication_role = replica;');
-          
-          // Get all table names (excluding system tables)
-          const tables = await tx.$queryRaw<Array<{ tablename: string }>>`
-            SELECT tablename FROM pg_tables 
-            WHERE schemaname = 'public' 
-            AND tablename NOT LIKE 'pg_%' 
-            AND tablename != '_prisma_migrations'
-          `;
-          
-          // Truncate all tables in dependency order to avoid foreign key issues
-          const dependencyOrder = [
-            'email_verification_tokens',
-            'password_reset_tokens',
-            'user_sessions',
-            'subscriptions',
-            'command_history',
-            'terminal_sessions',
-            'ssh_profiles',
-            'users'
-          ];
-          
-          // First truncate tables in dependency order
-          for (const tablename of dependencyOrder) {
-            const tableExists = tables.some(t => t.tablename === tablename);
-            if (tableExists) {
-              await tx.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" RESTART IDENTITY CASCADE;`);
-            }
-          }
-          
-          // Then truncate any remaining tables
-          for (const { tablename } of tables) {
-            if (!dependencyOrder.includes(tablename)) {
-              await tx.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" RESTART IDENTITY CASCADE;`);
-            }
-          }
-          
-          // Re-enable foreign key checks
-          await tx.$executeRawUnsafe('SET session_replication_role = DEFAULT;');
-        }, {
-          timeout: process.env.CI ? 60000 : 30000, // Longer timeout in CI
-        });
-        
-        logger.debug('Database reset completed successfully');
-        return; // Success, exit retry loop
-        
-      } catch (error) {
-        lastError = error;
-        logger.warn(`Database reset attempt ${attempt} failed:`, error);
-        
-        if (attempt === maxRetries) {
-          throw lastError;
-        }
+    // Simple but effective: Use TRUNCATE CASCADE for fastest reset
+    // File lock ensures no concurrency issues
+    await prisma.$transaction(async (tx) => {
+      // Get all table names (excluding system tables)
+      const tables = await tx.$queryRaw<Array<{ tablename: string }>>`
+        SELECT tablename FROM pg_tables 
+        WHERE schemaname = 'public' 
+        AND tablename NOT LIKE 'pg_%' 
+        AND tablename != '_prisma_migrations'
+      `;
+      
+      // Disable foreign key checks temporarily
+      await tx.$executeRawUnsafe('SET session_replication_role = replica;');
+      
+      // Truncate all tables at once - faster and more reliable
+      if (tables.length > 0) {
+        const tableNames = tables.map(t => `"${t.tablename}"`).join(', ');
+        await tx.$executeRawUnsafe(`TRUNCATE TABLE ${tableNames} RESTART IDENTITY CASCADE;`);
       }
-    }
+      
+      // Re-enable foreign key checks
+      await tx.$executeRawUnsafe('SET session_replication_role = DEFAULT;');
+      
+    }, {
+      timeout: 10000, // Shorter timeout since we're using TRUNCATE
+      isolationLevel: 'ReadCommitted'
+    });
+    
+    logger.debug('Database reset completed successfully');
     
   } catch (error) {
-    logger.error('Database reset failed after all retries:', error);
+    logger.error('Database reset failed:', error);
     throw error;
   }
 }
