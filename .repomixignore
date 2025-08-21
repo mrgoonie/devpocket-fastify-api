@@ -1,0 +1,7 @@
+docs/*
+plans/*
+.claude/*
+.serena/*
+dist/*
+coverage/*
+.pnpm-store/*
