@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import { createTestUserAndLogin } from './helper.js';
-import { cleanupTestData, resetDatabase } from './setup.js';
+import { resetDatabase } from './setup.js';
 import { AuthType, SessionStatus } from '@prisma/client';
 import { sshConnectionManager } from '../modules/terminal/ssh.service.js';
 
@@ -49,41 +49,8 @@ const SSH_TEST_CONFIG = {
   },
 };
 
-// Test SSH private key (mock for testing - replace with actual key content)
-const TEST_SSH_PRIVATE_KEY = `-----BEGIN OPENSSH PRIVATE KEY-----
-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
------END OPENSSH PRIVATE KEY-----`;
+// Test SSH private key from environment variable
+const TEST_SSH_PRIVATE_KEY = process.env.SSH_TEST_PRIVATE_KEY || '';
 
 describe('SSH Real Connection Tests', () => {
   let app: FastifyInstance;

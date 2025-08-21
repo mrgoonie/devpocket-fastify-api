@@ -67,6 +67,7 @@ jobs:
           echo "SSH_TEST_PWD_PASS=${{ secrets.SSH_PASS_1 }}" >> .env.test
           echo "SSH_TEST_KEY_USER=${{ secrets.SSH_USER_2 }}" >> .env.test
           echo "SSH_TEST_PUBLIC_KEY=${{ secrets.SSH_KEY_2 }}" >> .env.test
+          echo "SSH_TEST_PRIVATE_KEY=${{ secrets.SSH_PRIVATE_KEY_2 }}" >> .env.test
 
       - name: Wait for database readiness
         run: |

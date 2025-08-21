@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../../app.js';
 import { createTestUserAndLogin } from '../../tests/helper.js';
-import { cleanupTestData, resetDatabase } from '../../tests/setup.js';
+import { resetDatabase } from '../../tests/setup.js';
 import { prisma } from '../../shared/database/client.js';
 import { encryptionService } from '../../shared/encryption/encryption.service.js';
 import { AuthType, SessionStatus } from '@prisma/client';
