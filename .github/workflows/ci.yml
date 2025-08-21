@@ -52,16 +52,12 @@ jobs:
           PASSWORD_ACCESS: true
           SUDO_ACCESS: false
           PUBLIC_KEY_FILE: /config/.ssh/authorized_keys
-        # Alternative health check options if netcat fails:
-        # --health-cmd "pgrep sshd || exit 1"
-        # --health-cmd "test -f /var/run/sshd.pid || exit 1"
         options: >-
-          --health-cmd "nc -z localhost 2222 || exit 1"
-          --health-interval 15s
-          --health-timeout 5s
-          --health-retries 10
-          --health-start-period 60s
-          --health-start-interval 5s
+          --health-cmd "pgrep sshd"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 5
+          --health-start-period 30s
         ports:
           - 2222:2222
 
@@ -163,24 +159,11 @@ jobs:
         run: |
           echo "=== Waiting for Docker SSH server to be ready ==="
           
-          # Wait for container to be healthy
-          echo "Checking container health status..."
+          # Wait for SSH service to be available
+          echo "Waiting for SSH service on port 2222..."
           for i in {1..60}; do
-            HEALTH_STATUS=$(docker inspect ssh-server --format='{{.State.Health.Status}}' 2>/dev/null || echo "unknown")
-            if [[ "$HEALTH_STATUS" == "healthy" ]]; then
-              echo "Container reports healthy status"
-              break
-            else
-              echo "Attempt $i: Container health status: $HEALTH_STATUS, waiting 2 seconds..."
-              sleep 2
-            fi
-          done
-          
-          # Wait for port to be available
-          echo "Checking SSH port availability..."
-          for i in {1..30}; do
-            if nc -z localhost 2222; then
-              echo "SSH server port is open"
+            if nc -z localhost 2222 2>/dev/null; then
+              echo "SSH server port is responsive (attempt $i)"
               break
             else
               echo "Attempt $i: SSH port not ready, waiting 2 seconds..."
@@ -188,19 +171,20 @@ jobs:
             fi
           done
           
-          # Final connectivity test with authentication bypass for initial test
+          # Give SSH service additional time to fully initialize
+          echo "Allowing SSH service extra time to fully initialize..."
+          sleep 10
+          
+          # Test SSH connectivity (non-blocking)
           echo "Testing SSH connectivity..."
-          sleep 5  # Additional time for SSH service to fully initialize
-          if timeout 10 ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 testuser@localhost echo "SSH ready" 2>/dev/null; then
-            echo "SSH server is ready and accepting connections!"
+          if timeout 15 ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 testuser@localhost echo "SSH connection successful" 2>/dev/null; then
+            echo "✅ SSH server is ready and accepting connections!"
           else
-            echo "SSH connection test failed, checking container status..."
-            echo "Container health: $(docker inspect ssh-server --format='{{.State.Health.Status}}' 2>/dev/null || echo 'unknown')"
-            echo "Container logs (last 20 lines):"
-            docker logs ssh-server --tail 20 2>/dev/null || echo "Could not retrieve logs"
-            echo "Port check: $(nc -z localhost 2222 && echo 'Port open' || echo 'Port closed')"
-            echo "Note: Container may still be usable for tests"
+            echo "⚠️  SSH connection test failed, but port is open - tests may still work"
+            echo "This could be due to authentication setup or timing issues"
           fi
+          
+          echo "SSH server setup completed"
 
       - name: Run database migrations
         run: pnpm run db:push
