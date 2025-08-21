@@ -38,6 +38,27 @@ jobs:
           --health-retries 5
         ports:
           - 6379:6379
+      
+      # Optional SSH server for integration testing
+      # Enable by setting SSH_TEST_REAL_SERVER=true in environment
+      ssh-server:
+        image: linuxserver/openssh-server:latest
+        env:
+          PUID: 1000
+          PGID: 1000
+          TZ: UTC
+          USER_NAME: testuser
+          USER_PASSWORD: testpass
+          PASSWORD_ACCESS: true
+          SUDO_ACCESS: false
+          PUBLIC_KEY_FILE: /config/.ssh/authorized_keys
+        options: >-
+          --health-cmd "ssh -o BatchMode=yes -o ConnectTimeout=5 testuser@localhost echo 'SSH server ready' || exit 1"
+          --health-interval 15s
+          --health-timeout 10s
+          --health-retries 5
+        ports:
+          - 2222:2222
 
     steps:
       - uses: actions/checkout@v4
@@ -61,13 +82,31 @@ jobs:
           cp .env.test.example .env.test
           echo "DATABASE_URL=postgresql://devpocket_test:devpocket_test@localhost:5432/devpocket-fastify-api-test?schema=public" >> .env.test
           echo "REDIS_URL=redis://localhost:6379/1" >> .env.test
-          echo "SSH_TEST_HOST=${{ secrets.HOST_IP }}" >> .env.test
-          echo "SSH_TEST_PORT=22" >> .env.test
-          echo "SSH_TEST_PWD_USER=${{ secrets.SSH_USER_1 }}" >> .env.test
-          echo "SSH_TEST_PWD_PASS=${{ secrets.SSH_PASS_1 }}" >> .env.test
-          echo "SSH_TEST_KEY_USER=${{ secrets.SSH_USER_2 }}" >> .env.test
-          echo "SSH_TEST_PUBLIC_KEY=${{ secrets.SSH_KEY_2 }}" >> .env.test
-          echo "SSH_TEST_PRIVATE_KEY=${{ secrets.SSH_PRIVATE_KEY_2 }}" >> .env.test
+          
+          # SSH Test Configuration
+          # Option 1: Use Docker SSH server (recommended for CI)
+          if [[ "${{ vars.SSH_TEST_REAL_SERVER }}" == "true" ]]; then
+            echo "SSH_TEST_REAL_SERVER=true" >> .env.test
+            echo "SSH_TEST_HOST=localhost" >> .env.test
+            echo "SSH_TEST_PORT=2222" >> .env.test
+            echo "SSH_TEST_PWD_USER=testuser" >> .env.test
+            echo "SSH_TEST_PWD_PASS=testpass" >> .env.test
+            echo "=== Using Docker SSH server for SSH tests ==="
+          else
+            # Option 2: Use external SSH server (if secrets are configured)
+            if [[ -n "${{ secrets.HOST_IP }}" ]]; then
+              echo "SSH_TEST_HOST=${{ secrets.HOST_IP }}" >> .env.test
+              echo "SSH_TEST_PORT=22" >> .env.test
+              echo "SSH_TEST_PWD_USER=${{ secrets.SSH_USER_1 }}" >> .env.test
+              echo "SSH_TEST_PWD_PASS=${{ secrets.SSH_PASS_1 }}" >> .env.test
+              echo "SSH_TEST_KEY_USER=${{ secrets.SSH_USER_2 }}" >> .env.test
+              echo "SSH_TEST_PUBLIC_KEY=${{ secrets.SSH_KEY_2 }}" >> .env.test
+              echo "SSH_TEST_PRIVATE_KEY=${{ secrets.SSH_PRIVATE_KEY_2 }}" >> .env.test
+              echo "=== Using external SSH server for SSH tests ==="
+            else
+              echo "=== Using mock SSH tests (no real server configured) ==="
+            fi
+          fi
 
       - name: Wait for database readiness
         run: |
@@ -113,6 +152,34 @@ jobs:
             exit 1
           }
           echo "Database connection successful!"
+
+      - name: Wait for SSH server readiness
+        if: vars.SSH_TEST_REAL_SERVER == 'true'
+        run: |
+          echo "=== Waiting for Docker SSH server to be ready ==="
+          for i in {1..30}; do
+            if nc -z localhost 2222; then
+              echo "SSH server port is open, testing SSH connection..."
+              # Wait a bit more for SSH service to be fully ready
+              sleep 5
+              if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -p 2222 testuser@localhost -o PasswordAuthentication=yes echo "SSH connection successful"; then
+                echo "SSH server is ready!"
+                break
+              else
+                echo "SSH port open but connection failed, waiting..."
+              fi
+            else
+              echo "Attempt $i: SSH server not ready, waiting 2 seconds..."
+            fi
+            sleep 2
+          done
+          
+          # Final connectivity test
+          if ! nc -z localhost 2222; then
+            echo "SSH server failed to become ready after 60 seconds"
+            exit 1
+          fi
+          echo "SSH server readiness check completed!"
 
       - name: Run database migrations
         run: pnpm run db:push
