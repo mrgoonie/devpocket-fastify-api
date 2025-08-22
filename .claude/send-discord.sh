@@ -4,24 +4,27 @@
 
 # Load environment variables from .env file
 if [[ -f .env ]]; then
-    # Export variables from .env, handling comments and empty lines
+    echo "Loading .env file..."
     set -a  # automatically export all variables
-    source <(grep -E '^[A-Z_][A-Z0-9_]*=' .env | sed 's/^/export /')
+    source .env
     set +a  # turn off automatic export
+    echo "✅ Environment loaded, DISCORD_WEBHOOK_URL=$(echo ${DISCORD_WEBHOOK_URL:0:50}...)"
+else
+    echo "Warning: .env file not found"
 fi
 
 message="$1"
     
 if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
     echo "⚠️  Discord notification skipped: DISCORD_WEBHOOK_URL not set"
-    return 1
+    exit 1
 fi
 
 # Prepare message for Discord (Discord markdown supports \n)
-local discord_message="$message"
+discord_message="$message"
 
 # Discord embeds for richer formatting
-local payload=$(cat <<EOF
+payload=$(cat <<EOF
 {
 "embeds": [{
     "title": "🤖 Claude Code Session Complete",
@@ -56,5 +59,5 @@ if [[ $? -eq 0 ]]; then
     echo "✅ Discord notification sent"
 else
     echo "❌ Failed to send Discord notification"
-    return 1
+    exit 1
 fi
