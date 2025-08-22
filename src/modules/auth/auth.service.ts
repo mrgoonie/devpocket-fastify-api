@@ -313,6 +313,32 @@ export class AuthService {
     }
   }
 
+  // Create session for user (for auto-login after registration)
+  static async createSessionForUser(userId: string, deviceId?: string): Promise<{ sessionId: string; refreshToken: string }> {
+    try {
+      // Create refresh token
+      const refreshToken = this.generateSecureToken();
+      
+      // Create session
+      const session = await prisma.session.create({
+        data: {
+          user_id: userId,
+          token: refreshToken,
+          device_id: deviceId,
+          expires_at: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_MS),
+        },
+      });
+
+      return {
+        sessionId: session.id,
+        refreshToken: session.token,
+      };
+    } catch (error) {
+      logger.error('Error creating session for user:', error);
+      throw error;
+    }
+  }
+
   // Request password reset
   static async requestPasswordReset(email: string): Promise<void> {
     try {

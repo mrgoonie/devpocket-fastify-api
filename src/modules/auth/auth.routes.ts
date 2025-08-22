@@ -30,7 +30,8 @@ export async function authRoutes(fastify: FastifyInstance) {
         properties: {
           email: { type: 'string', format: 'email' },
           username: { type: 'string', minLength: 3, maxLength: 20 },
-          password: { type: 'string', minLength: 8 }
+          password: { type: 'string', minLength: 8 },
+          device_id: { type: 'string' }
         },
         required: ['email', 'username', 'password']
       },
@@ -54,6 +55,9 @@ export async function authRoutes(fastify: FastifyInstance) {
                     updated_at: { type: 'string' }
                   }
                 },
+                access_token: { type: 'string' },
+                refresh_token: { type: 'string' },
+                expires_in: { type: 'number' }
               },
             },
           },

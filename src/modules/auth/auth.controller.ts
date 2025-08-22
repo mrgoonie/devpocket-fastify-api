@@ -44,10 +44,32 @@ export class AuthController {
       // Register user
       const user = await AuthService.register(input);
 
+      // Auto-login: Create session and generate tokens for Flutter compatibility
+      const sessionResult = await AuthService.createSessionForUser(user.id, input.device_id);
+
+      // Generate JWT access token
+      const accessToken = request.server.jwt.sign(
+        { 
+          userId: user.id,
+          sessionId: sessionResult.sessionId,
+          email: user.email,
+        },
+        { 
+          expiresIn: config.JWT.EXPIRES_IN,
+        }
+      );
+
+      const expiresInSeconds = getJWTExpirationSeconds();
+
       reply.status(201).send({
         success: true,
         message: 'User registered successfully. Please check your email for verification.',
-        data: { user },
+        data: { 
+          user,
+          access_token: accessToken,
+          refresh_token: sessionResult.refreshToken,
+          expires_in: expiresInSeconds,
+        },
       });
     } catch (error) {
       logger.error('Registration error:', error);

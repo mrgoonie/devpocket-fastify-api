@@ -14,6 +14,9 @@ interface ApiResponse<T> {
 
 interface RegisterData {
   user: UserResponse;
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
 }
 
 interface LoginData {
@@ -68,6 +71,12 @@ describe('Authentication Module', () => {
       expect(data.user.email).toBe(userData.email.toLowerCase());
       expect(data.user.username).toBe(userData.username);
       expect(data.user.email_verified).toBe(false);
+      // Verify auto-login tokens are returned
+      expect(data.access_token).toBeDefined();
+      expect(data.refresh_token).toBeDefined();
+      expect(data.expires_in).toBeGreaterThan(0);
+      expect(typeof data.access_token).toBe('string');
+      expect(typeof data.refresh_token).toBe('string');
     });
 
     it('should fail with invalid email', async () => {

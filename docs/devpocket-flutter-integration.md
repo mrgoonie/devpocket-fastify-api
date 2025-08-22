@@ -46,6 +46,7 @@ class ApiClient {
   }
   
   // Auth endpoints
+  // Registration automatically logs in the user and returns tokens
   Future<AuthResponse> register({
     required String email,
     required String username,
@@ -61,7 +62,7 @@ class ApiClient {
       });
       
       final authResponse = AuthResponse.fromJson(response.data);
-      await _saveToken(authResponse.token);
+      await _saveToken(authResponse.accessToken);
       return authResponse;
     } on DioError catch (e) {
       throw _handleError(e);
@@ -81,7 +82,7 @@ class ApiClient {
       });
       
       final authResponse = AuthResponse.fromJson(response.data);
-      await _saveToken(authResponse.token);
+      await _saveToken(authResponse.accessToken);
       return authResponse;
     } on DioError catch (e) {
       throw _handleError(e);
@@ -702,23 +703,34 @@ class LocalDatabase {
 
 class AuthResponse {
   final String userId;
-  final String token;
-  final String tokenType;
+  final String username;
+  final String email;
+  final bool emailVerified;
+  final String accessToken;
+  final String refreshToken;
   final int expiresIn;
   
   AuthResponse({
     required this.userId,
-    required this.token,
-    required this.tokenType,
+    required this.username,
+    required this.email,
+    required this.emailVerified,
+    required this.accessToken,
+    required this.refreshToken,
     required this.expiresIn,
   });
   
   factory AuthResponse.fromJson(Map<String, dynamic> json) {
+    final user = json['data']['user'];
+    final data = json['data'];
     return AuthResponse(
-      userId: json['user_id'],
-      token: json['token'],
-      tokenType: json['token_type'],
-      expiresIn: json['expires_in'],
+      userId: user['id'],
+      username: user['username'],
+      email: user['email'],
+      emailVerified: user['email_verified'],
+      accessToken: data['access_token'],
+      refreshToken: data['refresh_token'],
+      expiresIn: data['expires_in'],
     );
   }
 }

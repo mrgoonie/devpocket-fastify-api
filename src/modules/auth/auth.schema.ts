@@ -11,6 +11,7 @@ export const registerSchema = z.object({
   password: z.string()
     .min(8, 'Password must be at least 8 characters')
     .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'Password must contain at least one lowercase letter, one uppercase letter, and one number'),
+  device_id: z.string().optional(), // For session creation during auto-login
 });
 
 // User login schema
@@ -82,9 +83,23 @@ export const refreshResponseSchema = z.object({
   expires_in: z.number(),
 });
 
+// Registration response schema for Flutter client compatibility
+// Returns authentication tokens for auto-login after registration
+export const registrationResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  data: z.object({
+    user: userResponseSchema,
+    access_token: z.string(),
+    refresh_token: z.string(),
+    expires_in: z.number(),
+  }),
+});
+
 export type UserResponse = z.infer<typeof userResponseSchema>;
 export type LoginResponse = z.infer<typeof loginResponseSchema>;
 export type RefreshResponse = z.infer<typeof refreshResponseSchema>;
+export type RegistrationResponse = z.infer<typeof registrationResponseSchema>;
 
 // JSON Schema exports for Fastify validation (must be after Zod schema definitions)
 export const registerJsonSchema = zodToJsonSchema(registerSchema, 'registerSchema');
@@ -97,3 +112,4 @@ export const changePasswordJsonSchema = zodToJsonSchema(changePasswordSchema, 'c
 export const userResponseJsonSchema = zodToJsonSchema(userResponseSchema, 'userResponseSchema');
 export const loginResponseJsonSchema = zodToJsonSchema(loginResponseSchema, 'loginResponseSchema');
 export const refreshResponseJsonSchema = zodToJsonSchema(refreshResponseSchema, 'refreshResponseSchema');
+export const registrationResponseJsonSchema = zodToJsonSchema(registrationResponseSchema, 'registrationResponseSchema');
