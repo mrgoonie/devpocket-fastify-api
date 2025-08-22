@@ -6,7 +6,10 @@ The DevPocket API is a RESTful API that powers the AI-powered mobile terminal ap
 
 ## API Information
 
-- **Base URL**: `https://api.devpocket.com` (Production) / `http://localhost:3000` (Development)
+- **Base URL**: 
+  - Local Development: `http://localhost:3000`
+  - Development: `https://api.dev.devpocket.app`
+  - Production: `https://api.devpocket.app`
 - **API Version**: v1
 - **API Prefix**: `/api/v1`
 - **Documentation**: Available at `/docs` (Swagger UI)
@@ -20,13 +23,13 @@ All protected endpoints require a Bearer token in the Authorization header:
 
 ```bash
 curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-     https://api.devpocket.com/api/v1/auth/me
+     https://api.dev.devpocket.app/api/v1/auth/me
 ```
 
 ### 2. Register a New User
 
 ```bash
-curl -X POST https://api.devpocket.com/api/v1/auth/register \
+curl -X POST https://api.dev.devpocket.app/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -38,7 +41,7 @@ curl -X POST https://api.devpocket.com/api/v1/auth/register \
 ### 3. Login
 
 ```bash
-curl -X POST https://api.devpocket.com/api/v1/auth/login \
+curl -X POST https://api.dev.devpocket.app/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -98,6 +101,7 @@ The health service returns standardized responses:
 | `/api/v1/auth/reset-password` | POST | Reset password with token |
 | `/api/v1/auth/verify-email` | GET | Verify email with token |
 | `/api/v1/auth/change-password` | POST | Change password (authenticated) |
+| `/api/v1/auth/resend-verification` | POST | Resend email verification |
 
 ### SSH Profile Management
 
@@ -109,6 +113,50 @@ The health service returns standardized responses:
 | `/api/v1/ssh/profiles/:id` | PUT | Update SSH profile |
 | `/api/v1/ssh/profiles/:id` | DELETE | Delete SSH profile |
 | `/api/v1/ssh/test-connection` | POST | Test SSH connection |
+| `/api/v1/ssh/validate-key` | POST | Validate SSH private key |
+
+#### SSH Profile Authentication Types
+
+The SSH profile system supports multiple authentication methods:
+
+**Password Authentication:**
+```json
+{
+  "name": "Server Name",
+  "host": "server.example.com",
+  "port": 22,
+  "username": "user",
+  "authType": "password",
+  "password": "encrypted_password"
+}
+```
+
+**SSH Key Authentication:**
+```json
+{
+  "name": "Server Name",
+  "host": "server.example.com",
+  "port": 22,
+  "username": "user",
+  "authType": "key",
+  "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\n..."
+}
+```
+
+**SSH Key with Passphrase:**
+```json
+{
+  "name": "Server Name",
+  "host": "server.example.com",
+  "port": 22,
+  "username": "user",
+  "authType": "keyWithPassphrase",
+  "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\n...",
+  "passphrase": "encrypted_passphrase"
+}
+```
+
+**Note**: All sensitive data (passwords, private keys, passphrases) are encrypted before storage.
 
 ### Terminal Session Management
 
@@ -119,6 +167,33 @@ The health service returns standardized responses:
 | `/api/v1/terminal/sessions/:id` | DELETE | Terminate terminal session |
 | `/api/v1/terminal/sessions/:id/history` | GET | Get session command history |
 | `/api/v1/terminal/stats` | GET | Get terminal usage statistics |
+
+#### Terminal Session Types
+
+The API supports two types of terminal sessions:
+
+**Local Terminal Session:**
+```json
+{
+  "type": "local",
+  "shell": "/bin/bash"
+}
+```
+
+**SSH Terminal Session:**
+```json
+{
+  "type": "ssh",
+  "sshProfileId": "profile-uuid-here"
+}
+```
+
+Both session types return a session object with:
+- `id`: Unique session identifier
+- `type`: Session type ("local" or "ssh")
+- `status`: Current session status
+- `createdAt`: Session creation timestamp
+- `lastActivity`: Last activity timestamp
 
 ### Subscription & Payments
 
@@ -131,8 +206,31 @@ The health service returns standardized responses:
 | `/api/v1/subscriptions/cancel` | POST | Cancel subscription |
 | `/api/v1/subscriptions/usage/:feature` | GET | Check feature usage limits |
 | `/api/v1/subscriptions/free` | POST | Create free subscription |
+| `/api/v1/subscriptions/revenuecat-transaction` | POST | Process RevenueCat transaction |
 | `/api/v1/webhooks/revenuecat` | POST | RevenueCat webhook handler |
 | `/api/v1/payment/health` | GET | Payment service health check |
+
+#### RevenueCat Webhook Integration
+
+The API integrates with RevenueCat for subscription management. The webhook endpoint validates signatures for security:
+
+**Webhook Request Headers:**
+- `x-revenuecat-signature`: HMAC signature for request verification
+- `Content-Type`: `application/json`
+
+**Webhook Payload Example:**
+```json
+{
+  "event": {
+    "type": "INITIAL_PURCHASE",
+    "app_user_id": "user-uuid",
+    "product_id": "pro_monthly",
+    "purchased_at_ms": 1640995200000
+  }
+}
+```
+
+The webhook handler automatically updates user subscriptions based on RevenueCat events.
 
 ## Authentication Flow
 
@@ -250,31 +348,160 @@ The API implements rate limiting to prevent abuse:
 
 Real-time terminal communication uses WebSocket connections:
 
-- **Endpoint**: `ws://localhost:3000/ws/terminal` or `wss://api.devpocket.com/ws/terminal`
+- **Endpoint**: `ws://localhost:3000/ws/terminal` or `wss://api.dev.devpocket.app/ws/terminal`
 - **Authentication**: Include JWT token in connection query: `?token=YOUR_JWT_TOKEN`
 - **Protocol**: Binary data for terminal I/O, JSON for control messages
 
 ## Subscription Plans & Limits
 
-### Free Tier (7 days)
+### FREE Tier
 - Core terminal functionality
 - BYOK AI features
-- Limited SSH connections
-- No cloud history
+- Limited SSH connections (5)
+- Limited AI requests (100)
+- No multi-device sync
+- No cloud command history
 
-### Pro Tier ($12/month)
+### PRO Tier
+- All FREE features
+- Unlimited SSH connections
+- Unlimited AI requests
 - Multi-device sync
 - Cloud command history
-- Unlimited SSH connections
-- AI request caching
 - Priority support
 
-### Team Tier ($25/user/month)
-- All Pro features
+### TEAM Tier
+- All PRO features
 - Team workspaces
 - Shared SSH profiles
 - SSO integration
 - Advanced analytics
+- Team management
+
+#### Subscription Status Response
+
+```json
+{
+  "isActive": true,
+  "tier": "PRO",
+  "expiresAt": "2024-12-31T23:59:59Z",
+  "limits": {
+    "sshConnections": -1,
+    "aiRequests": -1,
+    "cloudHistory": true,
+    "multiDevice": true
+  }
+}
+```
+
+**Note**: A limit value of `-1` indicates unlimited usage for that feature.
+
+## API Request & Response Examples
+
+### Authentication Examples
+
+**Registration Request:**
+```bash
+curl -X POST https://api.dev.devpocket.app/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "username": "testuser",
+    "password": "securepassword123"
+  }'
+```
+
+**Registration Response:**
+```json
+{
+  "success": true,
+  "message": "User registered successfully",
+  "data": {
+    "user": {
+      "id": "uuid-here",
+      "email": "user@example.com",
+      "username": "testuser",
+      "emailVerified": false,
+      "createdAt": "2024-01-15T10:30:00Z"
+    },
+    "accessToken": "jwt-token-here",
+    "refreshToken": "refresh-token-here"
+  }
+}
+```
+
+### SSH Profile Creation Example
+
+**Request:**
+```bash
+curl -X POST https://api.dev.devpocket.app/api/v1/ssh/profiles \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Production Server",
+    "host": "prod.example.com",
+    "port": 22,
+    "username": "admin",
+    "authType": "key",
+    "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END OPENSSH PRIVATE KEY-----"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "SSH profile created successfully",
+  "data": {
+    "id": "profile-uuid",
+    "name": "Production Server",
+    "host": "prod.example.com",
+    "port": 22,
+    "username": "admin",
+    "authType": "key",
+    "createdAt": "2024-01-15T10:30:00Z"
+  }
+}
+```
+
+### Terminal Session Creation Example
+
+**Local Terminal Request:**
+```bash
+curl -X POST https://api.dev.devpocket.app/api/v1/terminal/sessions \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "local",
+    "shell": "/bin/bash"
+  }'
+```
+
+**SSH Terminal Request:**
+```bash
+curl -X POST https://api.dev.devpocket.app/api/v1/terminal/sessions \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "ssh",
+    "sshProfileId": "profile-uuid-here"
+  }'
+```
+
+**Session Response:**
+```json
+{
+  "success": true,
+  "message": "Terminal session created successfully",
+  "data": {
+    "id": "session-uuid",
+    "type": "ssh",
+    "status": "active",
+    "createdAt": "2024-01-15T10:30:00Z",
+    "lastActivity": "2024-01-15T10:30:00Z"
+  }
+}
+```
 
 ## Development & Testing
 
@@ -320,13 +547,25 @@ NODE_ENV=development
 The API supports automatic SDK generation using the OpenAPI specification:
 
 ```bash
-# Generate TypeScript SDK
+# Generate TypeScript SDK (Development)
+npx openapi-generator-cli generate \
+  -i https://api.dev.devpocket.app/docs/json \
+  -g typescript-axios \
+  -o ./sdk/typescript
+
+# Generate TypeScript SDK (Local)
 npx openapi-generator-cli generate \
   -i http://localhost:3000/docs/json \
   -g typescript-axios \
   -o ./sdk/typescript
 
-# Generate Python SDK  
+# Generate Python SDK (Development)
+npx openapi-generator-cli generate \
+  -i https://api.dev.devpocket.app/docs/json \
+  -g python \
+  -o ./sdk/python
+
+# Generate Python SDK (Local)
 npx openapi-generator-cli generate \
   -i http://localhost:3000/docs/json \
   -g python \

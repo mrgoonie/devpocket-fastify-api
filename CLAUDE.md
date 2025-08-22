@@ -76,19 +76,56 @@ During the implementation process, you will delegate tasks to the following suba
 
 ---
 
+## Context Management & Anti-Rot Guidelines
+
+### Context Refresh Protocol
+To prevent context degradation and maintain performance in long conversations:
+
+#### Agent Handoff Refresh Points
+- **Between Agents**: Reset context when switching between specialized agents
+- **Phase Transitions**: Clear context between planning → implementation → testing → review phases
+- **Document Generation**: Use fresh context for creating plans, reports, and documentation
+- **Error Recovery**: Reset context after debugging sessions to avoid confusion
+
+#### Information Handoff Structure
+When delegating to agents, provide only essential context:
+```markdown
+## Task Summary
+- **Objective**: [brief description]
+- **Scope**: [specific boundaries]
+- **Critical Context**: [requirements, constraints, current state]
+- **Reference Files**: [relevant file paths - don't include full content]
+- **Success Criteria**: [clear acceptance criteria]
+```
+
+#### Context Health Guidelines
+- **Keep Context Under 8000 Tokens**: Trigger summarization when exceeded
+- **Prioritize Recent Changes**: Emphasize recent modifications over historical data
+- **Use References Over Content**: Link to files instead of including full content
+- **Summary Over Details**: Provide bullet points instead of verbose explanations
+
+### Agent Interaction Best Practices
+- Each agent should complete its task and provide a focused summary report
+- Avoid circular dependencies between agents  
+- Use clear "handoff complete" signals when transitioning
+- Include only task-relevant context in agent instructions
+
+---
+
 ## Development Rules
 
 ### General
 - Use `context7` mcp tools for exploring latest docs of plugins/packages
 - Use `senera` mcp tools for semantic retrieval and editing capabilities
 - Use `psql` bash command to query database for debugging.
-- Use `planner-researcher` agent to plan for the implementation plan.
+- Use `planner-researcher` agent to plan for the implementation plan using templates in `./plans/templates/`.
 - Use `database-admin` agent to run tests and analyze the summary report.
 - Use `tester` agent to run tests and analyze the summary report.
 - Use `debugger` agent to collect logs in server or github actions to analyze the summary report.
 - Use `code-reviewer` agent to review code.
 - Use `docs-manager` agent to update docs in `./docs` directory if any.
 - Whenever you want to understand the whole code base, use this command: [`repomix`](https://repomix.com/guide/usage) and read the output summary file.
+- When you finish the implementation, send a summary report to Discord channel with `./.claude/send-discord.sh "Your message here"` script.
 
 ### Code Quality Guidelines
 - Don't be too harsh on code linting

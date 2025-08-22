@@ -5,6 +5,94 @@ All notable changes to the DevPocket API will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-08-22
+
+### Environment Configuration Updates
+
+#### Multi-Environment Base URL Support
+- **Development Environment**: `https://api.dev.devpocket.app` for staging deployments
+- **Production Environment**: `https://api.devpocket.app` for production deployments  
+- **Local Development**: `http://localhost:3000` remains unchanged
+- **Enhanced documentation** with clear environment-specific URLs and examples
+
+#### API Documentation Improvements
+- **Structured Base URL documentation** with environment-specific endpoints
+- **Enhanced SDK generation examples** for all environments (development, production, local)
+- **Improved quick start guide** with environment-aware curl examples
+- **Comprehensive endpoint documentation** with proper authentication requirements
+
+#### CI/CD Infrastructure Enhancements
+- **SSH container integration** for enhanced testing capabilities in GitHub Actions
+- **Docker SSH server setup** for comprehensive SSH connection testing
+- **Enhanced test reliability** with improved container health checks
+- **GitHub Actions optimization** with better environment variable handling
+
+### Testing & Quality Improvements
+
+- **Docker SSH server integration** enables realistic SSH connection testing
+- **Enhanced test coverage** for SSH functionality with containerized testing environment
+- **Improved CI/CD pipeline reliability** with optimized container initialization
+- **Comprehensive test documentation** with setup and troubleshooting guides
+
+### Documentation Enhancements
+
+- **Multi-environment configuration** clearly documented across all API endpoints
+- **Enhanced SDK generation documentation** with environment-specific examples
+- **Improved developer experience** with clearer setup instructions
+- **Updated examples** reflect current production and development URLs
+
+### Breaking Changes
+
+None. All improvements are backward compatible.
+
+### Migration Guide
+
+#### For API Consumers
+**Before:**
+```bash
+# Only development URL was documented
+curl https://api.dev.devpocket.app/api/v1/health
+```
+
+**After:**
+```bash
+# Clear environment options available
+# Development
+curl https://api.dev.devpocket.app/api/v1/health
+
+# Production  
+curl https://api.devpocket.app/api/v1/health
+
+# Local
+curl http://localhost:3000/api/v1/health
+```
+
+#### For SDK Generation
+Update your SDK generation scripts to target the appropriate environment:
+
+```bash
+# Development SDK
+npx openapi-generator-cli generate \
+  -i https://api.dev.devpocket.app/docs/json \
+  -g typescript-axios \
+  -o ./sdk/typescript
+
+# Production SDK
+npx openapi-generator-cli generate \
+  -i https://api.devpocket.app/docs/json \
+  -g typescript-axios \
+  -o ./sdk/typescript
+```
+
+### Known Limitations and Future Improvements
+
+Based on infrastructure improvements, the following enhancements are planned:
+- **Enhanced SSH key validation** endpoint for improved security
+- **Email verification resend** functionality for better user experience
+- **RevenueCat transaction processing** endpoint for mobile payment integration
+
+---
+
 ## [1.1.0] - 2025-08-20
 
 ### Enhanced Database Transaction Reliability
