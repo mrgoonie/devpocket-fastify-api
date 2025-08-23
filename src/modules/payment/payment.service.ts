@@ -317,15 +317,15 @@ export class PaymentService {
 
     return {
       id: subscription.id,
-      planType: subscription.plan_type,
+      plan_type: subscription.plan_type,
       status: subscription.status,
-      startedAt: subscription.started_at,
-      expiresAt: subscription.expires_at,
+      started_at: subscription.started_at,
+      expires_at: subscription.expires_at,
       limits,
       usage: {
-        sshConnections: usageLimits?.ssh_connections || 0,
-        aiRequests: usageLimits?.ai_requests || 0,
-        resetDate: usageLimits?.reset_date || new Date(),
+        ssh_connections: usageLimits?.ssh_connections || 0,
+        ai_requests: usageLimits?.ai_requests || 0,
+        reset_date: usageLimits?.reset_date || new Date(),
       },
     };
   }
@@ -340,7 +340,7 @@ export class PaymentService {
       return {
         allowed: false,
         reason: 'No active subscription',
-        currentUsage: 0,
+        current_usage: 0,
         limit: 0,
       };
     }
@@ -351,25 +351,25 @@ export class PaymentService {
     switch (feature) {
       case 'ssh':
         return {
-          allowed: usage.sshConnections < limits.sshConnections,
-          reason: usage.sshConnections >= limits.sshConnections ? 'SSH connection limit reached' : undefined,
-          currentUsage: usage.sshConnections,
-          limit: limits.sshConnections,
+          allowed: usage.ssh_connections < limits.ssh_connections,
+          reason: usage.ssh_connections >= limits.ssh_connections ? 'SSH connection limit reached' : undefined,
+          current_usage: usage.ssh_connections,
+          limit: limits.ssh_connections,
         };
       
       case 'ai':
         return {
-          allowed: usage.aiRequests < limits.aiRequests,
-          reason: usage.aiRequests >= limits.aiRequests ? 'AI request limit reached' : undefined,
-          currentUsage: usage.aiRequests,
-          limit: limits.aiRequests,
+          allowed: usage.ai_requests < limits.ai_requests,
+          reason: usage.ai_requests >= limits.ai_requests ? 'AI request limit reached' : undefined,
+          current_usage: usage.ai_requests,
+          limit: limits.ai_requests,
         };
 
       default:
         return {
           allowed: false,
           reason: 'Unknown feature',
-          currentUsage: 0,
+          current_usage: 0,
           limit: 0,
         };
     }

@@ -16,7 +16,7 @@ export function checkSshUsageLimit(paymentService: PaymentService) {
         return reply.code(403).send({
           error: 'SSH usage limit exceeded',
           reason: usageCheck.reason,
-          currentUsage: usageCheck.currentUsage,
+          current_usage: usageCheck.current_usage,
           limit: usageCheck.limit,
         });
       }
@@ -44,7 +44,7 @@ export function checkAiUsageLimit(paymentService: PaymentService) {
         return reply.code(403).send({
           error: 'AI usage limit exceeded',
           reason: usageCheck.reason,
-          currentUsage: usageCheck.currentUsage,
+          current_usage: usageCheck.current_usage,
           limit: usageCheck.limit,
         });
       }
@@ -131,14 +131,14 @@ export function requirePlanType(paymentService: PaymentService, requiredPlan: 'P
 
       // Check if user has required plan or higher
       const planHierarchy = { FREE: 0, PRO: 1, TEAM: 2 };
-      const userPlanLevel = planHierarchy[subscription.planType];
+      const userPlanLevel = planHierarchy[subscription.plan_type];
       const requiredPlanLevel = planHierarchy[requiredPlan];
 
       if (userPlanLevel < requiredPlanLevel) {
         return reply.code(403).send({
           error: 'Upgrade required',
           message: `This feature requires a ${requiredPlan} subscription or higher.`,
-          currentPlan: subscription.planType,
+          currentPlan: subscription.plan_type,
           requiredPlan,
         });
       }
@@ -159,11 +159,11 @@ export function requireCloudHistory(paymentService: PaymentService) {
       
       const subscription = await paymentService.getCurrentSubscription(userId);
       
-      if (!subscription || !subscription.limits.cloudHistory) {
+      if (!subscription || !subscription.limits.cloud_history) {
         return reply.code(403).send({
           error: 'Cloud history not available',
           message: 'Cloud history feature requires a PRO or TEAM subscription.',
-          currentPlan: subscription?.planType || 'FREE',
+          currentPlan: subscription?.plan_type || 'FREE',
         });
       }
     } catch (error) {
@@ -183,11 +183,11 @@ export function requireMultiDevice(paymentService: PaymentService) {
       
       const subscription = await paymentService.getCurrentSubscription(userId);
       
-      if (!subscription || !subscription.limits.multiDevice) {
+      if (!subscription || !subscription.limits.multi_device) {
         return reply.code(403).send({
           error: 'Multi-device not available',
           message: 'Multi-device synchronization requires a PRO or TEAM subscription.',
-          currentPlan: subscription?.planType || 'FREE',
+          currentPlan: subscription?.plan_type || 'FREE',
         });
       }
     } catch (error) {
@@ -210,7 +210,7 @@ declare module '../auth/auth.middleware.js' {
     usageCheck?: {
       allowed: boolean;
       reason?: string;
-      currentUsage: number;
+      current_usage: number;
       limit: number;
     };
   }

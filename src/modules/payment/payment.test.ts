@@ -17,25 +17,25 @@ interface ApiResponse<T> {
   subscription?: SubscriptionData;
   hasActiveSubscription?: boolean;
   allowed?: boolean;
-  currentUsage?: number;
+  current_usage?: number;
   limit?: number;
   pagination?: PaginationData;
 }
 
 // Specific Data Interfaces
 interface SubscriptionLimit {
-  sshConnections: number;
-  aiRequests: number;
-  cloudHistory: boolean;
+  ssh_connections: number;
+  ai_requests: number;
+  cloud_history: boolean;
 }
 
 interface SubscriptionUsage {
-  sshConnections: number;
-  aiRequests: number;
+  ssh_connections: number;
+  ai_requests: number;
 }
 
 interface SubscriptionData {
-  planType: 'FREE' | 'PRO' | 'TEAM';
+  plan_type: 'FREE' | 'PRO' | 'TEAM';
   status: 'ACTIVE' | 'CANCELLED' | 'PAST_DUE';
   limits: SubscriptionLimit;
   usage: SubscriptionUsage;
@@ -56,7 +56,7 @@ interface SubscriptionStatusData {
 
 interface UsageLimitData {
   allowed: boolean;
-  currentUsage: number;
+  current_usage: number;
   limit: number;
 }
 
@@ -141,12 +141,14 @@ describe('Payment Module', () => {
           expect(planTypes).toContain('TEAM');
 
           const freePlan = plans.find((p: PlanInfo) => p.type === 'FREE');
+          console.log('DEBUG: freePlan.limits keys:', Object.keys(freePlan?.limits || {}));
+          console.log('DEBUG: freePlan.limits:', JSON.stringify(freePlan?.limits, null, 2));
           expect(freePlan).toBeDefined();
           if (freePlan) {
             expect(freePlan.price).toBe(0);
-            expect(freePlan.limits.sshConnections).toBe(1);
-            expect(freePlan.limits.aiRequests).toBe(10);
-            expect(freePlan.limits.cloudHistory).toBe(false);
+            expect(freePlan.limits.ssh_connections).toBe(1);
+            expect(freePlan.limits.ai_requests).toBe(10);
+            expect(freePlan.limits.cloud_history).toBe(false);
           }
         }
       });
@@ -186,7 +188,7 @@ describe('Payment Module', () => {
         const { subscription } = response.json<ApiResponse<CurrentSubscriptionData>>();
         expect(subscription).toBeDefined();
         if (subscription) {
-          expect(subscription.planType).toBe('FREE');
+          expect(subscription.plan_type).toBe('FREE');
           expect(subscription.status).toBe('ACTIVE');
         }
       });
@@ -207,7 +209,7 @@ describe('Payment Module', () => {
 
         expect(subscription).toBeDefined();
         if (subscription) {
-          expect(subscription.planType).toBe('FREE');
+          expect(subscription.plan_type).toBe('FREE');
           expect(subscription.status).toBe('ACTIVE');
           expect(subscription.limits).toBeDefined();
           expect(subscription.usage).toBeDefined();
@@ -245,7 +247,7 @@ describe('Payment Module', () => {
         const data = response.json<ApiResponse<UsageLimitData>>();
 
         expect(data.allowed).toBe(true);
-        expect(data.currentUsage).toBe(0);
+        expect(data.current_usage).toBe(0);
         expect(data.limit).toBe(1); // FREE plan limit
       });
 
@@ -262,7 +264,7 @@ describe('Payment Module', () => {
         const data = response.json<ApiResponse<UsageLimitData>>();
 
         expect(data.allowed).toBe(true);
-        expect(data.currentUsage).toBe(0);
+        expect(data.current_usage).toBe(0);
         expect(data.limit).toBe(10); // FREE plan limit
       });
 

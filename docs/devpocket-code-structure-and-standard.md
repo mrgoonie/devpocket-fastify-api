@@ -334,6 +334,87 @@ async function verifyDatabaseConnection(): Promise<void> {
 }
 ```
 
+## API Field Naming Conventions
+
+### Snake Case Standard
+All API request and response fields MUST use `snake_case` naming convention for consistency and developer experience:
+
+```typescript
+// ✅ Correct - snake_case
+{
+  "user_id": "uuid-string",
+  "created_at": "2024-01-15T10:30:00Z",
+  "profile_image": "url-string",
+  "ssh_profiles": [...],
+  "is_verified": true,
+  "subscription_status": "active"
+}
+
+// ❌ Incorrect - camelCase, PascalCase, or mixed
+{
+  "userId": "uuid-string",          // camelCase
+  "CreatedAt": "2024-01-15T10:30:00Z", // PascalCase
+  "profile_image": "url-string",    // mixed with camelCase
+  "sshProfiles": [...],             // camelCase
+  "IsVerified": true,               // PascalCase
+  "subscriptionstatus": "active"    // no separator
+}
+```
+
+### Implementation Guidelines
+
+#### Database Fields
+Database field names should use `snake_case` to match API responses:
+```sql
+CREATE TABLE users (
+  user_id UUID PRIMARY KEY,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP,
+  email_verified BOOLEAN
+);
+```
+
+#### Zod Schema Validation
+Define schemas with snake_case field names:
+```typescript
+export const userSchema = z.object({
+  user_id: z.string().uuid(),
+  email: z.string().email(),
+  created_at: z.string().datetime(),
+  is_verified: z.boolean(),
+  profile_settings: z.object({
+    display_name: z.string().optional(),
+    theme_preference: z.enum(['light', 'dark', 'auto'])
+  })
+});
+```
+
+#### TypeScript Type Definitions
+All API-related interfaces should use snake_case:
+```typescript
+interface User {
+  user_id: string;
+  email: string;
+  username: string;
+  created_at: string;
+  updated_at: string;
+  is_verified: boolean;
+  profile_settings?: {
+    display_name?: string;
+    theme_preference: 'light' | 'dark' | 'auto';
+  };
+}
+```
+
+### Validation Patterns
+Field naming validation should be enforced at multiple levels:
+
+1. **Schema Level**: Zod schemas validate field names
+2. **Database Level**: Column names follow snake_case
+3. **API Level**: Request/response serialization maintains consistency
+4. **Documentation Level**: All examples use snake_case
+5. **Code Review Level**: Reviewers check for naming consistency
+
 ## Input/Output Validation
 
 ### Request Validation with Zod
@@ -418,10 +499,29 @@ interface PaginatedResponse<T> {
 2. Implement feature with proper error handling
 3. Use retry mechanisms for database operations prone to conflicts
 4. Decouple email services from critical database transactions
-5. Run linting before commits
-6. Run full test suite before push
-7. Use conventional commit messages
-8. Document API changes in changelog
+5. **Enforce API field naming consistency**: All request/response fields must use snake_case
+6. Run linting before commits
+7. Run full test suite before push
+8. Use conventional commit messages
+9. Document API changes in changelog
+
+#### API Field Naming Standards in Development
+All API implementations must follow these naming conventions throughout development:
+
+**Pre-Development Checklist:**
+- Verify all API designs use snake_case field names
+- Ensure database schema matches API field naming
+- Plan TypeScript types with consistent snake_case
+
+**During Implementation:**
+- Write Zod schemas with snake_case field validation
+- Use snake_case in all request/response interfaces  
+- Maintain consistency across controller, service, and database layers
+
+**Pre-Commit Validation:**
+- Code review checks for snake_case compliance
+- Verify no mixed camelCase/snake_case patterns
+- Ensure database queries return properly named fields
 
 ### Database Best Practices
 - Use appropriate transaction isolation levels based on operation criticality

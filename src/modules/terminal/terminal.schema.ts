@@ -115,24 +115,24 @@ export const WebSocketMessageSchema = z.union([
   }),
   z.object({
     type: z.literal('connect_ssh'),
-    profileId: z.string().uuid(),
+    profile_id: z.string().uuid(),
     cols: z.number().min(1).max(500).default(80),
     rows: z.number().min(1).max(200).default(24)
   }),
   z.object({
     type: z.literal('pty_input'),
-    sessionId: z.string(),
+    session_id: z.string(),
     data: z.string()
   }),
   z.object({
     type: z.literal('resize_pty'),
-    sessionId: z.string(),
+    session_id: z.string(),
     cols: z.number().min(1).max(500),
     rows: z.number().min(1).max(200)
   }),
   z.object({
     type: z.literal('kill_session'),
-    sessionId: z.string()
+    session_id: z.string()
   }),
   z.object({
     type: z.literal('ping'),

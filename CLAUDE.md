@@ -58,22 +58,6 @@ You are a senior full-stack developer with expertise in writing production-quali
 - Delegate to `tester` agent to run tests and analyze the summary report.
 - If the `tester` agent reports failed tests, fix them follow the recommendations.
 
-### Your Team (Subagents Team)
-
-During the implementation process, you will delegate tasks to the following subagents based on their expertise and capabilities.
-
-- **Planner & Researcher (`planner-researcher`)**: A senior technical lead specializing in searching on the internet, reading latest docs, understanding the codebase, designing scalable, secure, and maintainable software systems, and breaking down complex system designs into manageable, actionable tasks and detailed implementation instructions.
-
-- **Tester (`tester`)**: A senior QA engineer specializing in running tests, unit/integration tests validation, ensuring high code coverage, testing error scenarios, validating performance requirements, validating build processes, and producing detailed summary reports with actionable tasks.
-
-- **Debugger (`debugger`)**: A senior software engineer specializing in investigating production issues, analyzing system behavior, querying databases for diagnostic insights, examining table structures and relationships, collect and analyze logs in server infrastructure, read and collect logs in the CI/CD pipelines (github actions), running tests, and developing optimizing solutions for performance bottlenecks, and creating comprehensive summary reports with actionable recommendations.
-
-- **Database Admin (`database-admin`)**: A database specialist focusing on querying and analyzing database systems, diagnosing performance and structural issues, optimizing table structures and indexing strategies, implementing database solutions for scalability and reliability, performance optimization, restore and backup strategies, replication setup, monitoring, user permission management, and producing detailed summary reports with optimization recommendations.
-
-- **Docs Manager (`docs-manager`)**: A technical documentation specialist responsible for establishing implementation standards including codebase structure and error handling patterns, reading and analyzing existing documentation files in `./docs`, analyzing codebase changes to update documentation accordingly, writing and updating Product Development Requirements (PDRs), and organizing documentation for maximum developer productivity. Finally producing detailed summary reports.
-
-- **Code Reviewer (`code-reviewer`)**: A senior software engineer specializing in comprehensive code quality assessment and best practices enforcement, performing code linting and TypeScript type checking, validating build processes and deployment readiness, conducting performance reviews for optimization opportunities, and executing security audits to identify and mitigate vulnerabilities. Read the original implementation plan file in `./plans` directory and review the completed tasks, make sure everything is implemented properly as per the plan. Finally producing detailed summary reports with actionable recommendations.
-
 ---
 
 ## Context Management & Anti-Rot Guidelines
@@ -115,23 +99,30 @@ When delegating to agents, provide only essential context:
 ## Development Rules
 
 ### General
+- Use `pnpm` instead of `npm` or `yarn` for package management
 - Use `context7` mcp tools for exploring latest docs of plugins/packages
 - Use `senera` mcp tools for semantic retrieval and editing capabilities
 - Use `psql` bash command to query database for debugging.
+- When you finish the implementation, send a summary report to Discord channel with `./.claude/send-discord.sh "Your message here"` script.
+
+### Subagents
+Delegate tasks to these subagents according to their roles & expertises:
 - Use `planner-researcher` agent to plan for the implementation plan using templates in `./plans/templates/`.
 - Use `database-admin` agent to run tests and analyze the summary report.
 - Use `tester` agent to run tests and analyze the summary report.
 - Use `debugger` agent to collect logs in server or github actions to analyze the summary report.
 - Use `code-reviewer` agent to review code.
 - Use `docs-manager` agent to update docs in `./docs` directory if any.
-- Whenever you want to understand the whole code base, use this command: [`repomix`](https://repomix.com/guide/usage) and read the output summary file.
-- When you finish the implementation, send a summary report to Discord channel with `./.claude/send-discord.sh "Your message here"` script.
+- Use `git-manager` agent to commit and push code changes.
+**Notes [important]:** You can intelligently spawn **multiple subagents in parallel** or **chain them sequentially** to handle the tasks efficiently.
 
 ### Code Quality Guidelines
-- Don't be too harsh on code linting
+- Don't be too harsh on code linting, but make sure there are no syntax errors and code are compilable
 - Prioritize functionality and readability over strict style enforcement and code formatting
 - Use reasonable code quality standards that enhance developer productivity
-- Use try catch error handling
+- Use try catch error handling & cover security standards
+- Use `code-reviewer` agent to review code after every implementation
+- **API Field Naming**: All API request/response fields MUST use snake_case convention consistently
 
 ### Pre-commit/Push Rules
 - Run linting before commit

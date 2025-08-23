@@ -15,7 +15,7 @@ export interface HealthCheckResult {
 
 export interface HealthCheck {
   status: 'ok' | 'unhealthy';
-  responseTime?: number;
+  response_time?: number;
   message?: string;
   details?: Record<string, unknown>;
 }
@@ -63,7 +63,7 @@ export class HealthService {
 
       return {
         status: 'ok',
-        responseTime,
+        response_time: responseTime,
         message: 'Database connection successful',
       };
     } catch (error) {
@@ -92,7 +92,7 @@ export class HealthService {
 
       return {
         status: 'ok',
-        responseTime,
+        response_time: responseTime,
         message: 'Redis connection successful',
       };
     } catch (error) {

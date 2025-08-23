@@ -14,38 +14,38 @@ export type InvoiceStatus = z.infer<typeof InvoiceStatusSchema>;
 
 // Plan limits configuration
 export interface PlanLimits {
-  sshConnections: number;
-  aiRequests: number;
-  cloudHistory: boolean;
-  multiDevice: boolean;
-  teamFeatures: boolean;
-  prioritySupport: boolean;
+  ssh_connections: number;
+  ai_requests: number;
+  cloud_history: boolean;
+  multi_device: boolean;
+  team_features: boolean;
+  priority_support: boolean;
 }
 
 export const planLimits: Record<PlanType, PlanLimits> = {
   FREE: {
-    sshConnections: 1,
-    aiRequests: 10,
-    cloudHistory: false,
-    multiDevice: false,
-    teamFeatures: false,
-    prioritySupport: false,
+    ssh_connections: 1,
+    ai_requests: 10,
+    cloud_history: false,
+    multi_device: false,
+    team_features: false,
+    priority_support: false,
   },
   PRO: {
-    sshConnections: 10,
-    aiRequests: 1000,
-    cloudHistory: true,
-    multiDevice: true,
-    teamFeatures: false,
-    prioritySupport: true,
+    ssh_connections: 10,
+    ai_requests: 1000,
+    cloud_history: true,
+    multi_device: true,
+    team_features: false,
+    priority_support: true,
   },
   TEAM: {
-    sshConnections: 50,
-    aiRequests: 5000,
-    cloudHistory: true,
-    multiDevice: true,
-    teamFeatures: true,
-    prioritySupport: true,
+    ssh_connections: 50,
+    ai_requests: 5000,
+    cloud_history: true,
+    multi_device: true,
+    team_features: true,
+    priority_support: true,
   },
 };
 
@@ -114,35 +114,35 @@ export type RevenueCatWebhook = z.infer<typeof RevenueCatWebhookSchema>;
 
 // Subscription creation schema
 export const CreateSubscriptionSchema = z.object({
-  userId: z.string().uuid(),
-  planType: PlanTypeSchema,
-  providerRef: z.string(),
-  expiresAt: z.date().optional(),
+  user_id: z.string().uuid(),
+  plan_type: PlanTypeSchema,
+  provider_ref: z.string(),
+  expires_at: z.date().optional(),
 });
 export type CreateSubscription = z.infer<typeof CreateSubscriptionSchema>;
 
 // Subscription update schema
 export const UpdateSubscriptionSchema = z.object({
-  planType: PlanTypeSchema.optional(),
+  plan_type: PlanTypeSchema.optional(),
   status: SubscriptionStatusSchema.optional(),
-  expiresAt: z.date().optional(),
+  expires_at: z.date().optional(),
 });
 export type UpdateSubscription = z.infer<typeof UpdateSubscriptionSchema>;
 
 // Payment history creation schema
 export const CreatePaymentHistorySchema = z.object({
-  userId: z.string().uuid(),
+  user_id: z.string().uuid(),
   amount: z.number().positive(),
   currency: z.string().length(3),
-  providerRef: z.string(),
+  provider_ref: z.string(),
   status: z.string(),
 });
 export type CreatePaymentHistory = z.infer<typeof CreatePaymentHistorySchema>;
 
 // Usage limits update schema
 export const UpdateUsageLimitsSchema = z.object({
-  sshConnections: z.number().nonnegative().optional(),
-  aiRequests: z.number().nonnegative().optional(),
+  ssh_connections: z.number().nonnegative().optional(),
+  ai_requests: z.number().nonnegative().optional(),
 });
 export type UpdateUsageLimits = z.infer<typeof UpdateUsageLimitsSchema>;
 
@@ -153,15 +153,15 @@ export const PlanInfoSchema = z.object({
   description: z.string(),
   price: z.number(),
   currency: z.string(),
-  billingPeriod: z.enum(['MONTHLY', 'YEARLY']),
+  billing_period: z.enum(['MONTHLY', 'YEARLY']),
   features: z.array(z.string()),
   limits: z.object({
-    sshConnections: z.number(),
-    aiRequests: z.number(),
-    cloudHistory: z.boolean(),
-    multiDevice: z.boolean(),
-    teamFeatures: z.boolean(),
-    prioritySupport: z.boolean(),
+    ssh_connections: z.number(),
+    ai_requests: z.number(),
+    cloud_history: z.boolean(),
+    multi_device: z.boolean(),
+    team_features: z.boolean(),
+    priority_support: z.boolean(),
   }),
 });
 export type PlanInfo = z.infer<typeof PlanInfoSchema>;
@@ -169,22 +169,22 @@ export type PlanInfo = z.infer<typeof PlanInfoSchema>;
 // Current subscription response schema
 export const CurrentSubscriptionSchema = z.object({
   id: z.string().uuid(),
-  planType: PlanTypeSchema,
+  plan_type: PlanTypeSchema,
   status: SubscriptionStatusSchema,
-  startedAt: z.date(),
-  expiresAt: z.date().nullable(),
+  started_at: z.date(),
+  expires_at: z.date().nullable(),
   limits: z.object({
-    sshConnections: z.number(),
-    aiRequests: z.number(),
-    cloudHistory: z.boolean(),
-    multiDevice: z.boolean(),
-    teamFeatures: z.boolean(),
-    prioritySupport: z.boolean(),
+    ssh_connections: z.number(),
+    ai_requests: z.number(),
+    cloud_history: z.boolean(),
+    multi_device: z.boolean(),
+    team_features: z.boolean(),
+    priority_support: z.boolean(),
   }),
   usage: z.object({
-    sshConnections: z.number(),
-    aiRequests: z.number(),
-    resetDate: z.date(),
+    ssh_connections: z.number(),
+    ai_requests: z.number(),
+    reset_date: z.date(),
   }),
 });
 export type CurrentSubscription = z.infer<typeof CurrentSubscriptionSchema>;
@@ -193,16 +193,16 @@ export type CurrentSubscription = z.infer<typeof CurrentSubscriptionSchema>;
 export const UsageCheckResultSchema = z.object({
   allowed: z.boolean(),
   reason: z.string().optional(),
-  currentUsage: z.number(),
+  current_usage: z.number(),
   limit: z.number(),
 });
 export type UsageCheckResult = z.infer<typeof UsageCheckResultSchema>;
 
 // Plan pricing configuration
 export const planPricing = {
-  FREE: { price: 0, currency: 'USD', billingPeriod: 'MONTHLY' as const },
-  PRO: { price: 12, currency: 'USD', billingPeriod: 'MONTHLY' as const },
-  TEAM: { price: 25, currency: 'USD', billingPeriod: 'MONTHLY' as const },
+  FREE: { price: 0, currency: 'USD', billing_period: 'MONTHLY' as const },
+  PRO: { price: 12, currency: 'USD', billing_period: 'MONTHLY' as const },
+  TEAM: { price: 25, currency: 'USD', billing_period: 'MONTHLY' as const },
 } as const;
 
 // Plan information for API responses
@@ -210,19 +210,30 @@ export const planInfo: Record<PlanType, Omit<PlanInfo, 'type'>> = {
   FREE: {
     name: 'Free Tier',
     description: '7-day trial with core terminal features and BYOK AI',
-    ...planPricing.FREE,
+    price: 0,
+    currency: 'USD',
+    billing_period: 'MONTHLY' as const,
     features: [
       'Core terminal functionality',
       'SSH connections (1 max)',
       'AI features with BYOK',
       'Basic command history',
     ],
-    limits: planLimits.FREE,
+    limits: {
+      ssh_connections: 1,
+      ai_requests: 10,
+      cloud_history: false,
+      multi_device: false,
+      team_features: false,
+      priority_support: false,
+    },
   },
   PRO: {
     name: 'Pro Tier',
     description: 'Full features with multi-device sync and cloud storage',
-    ...planPricing.PRO,
+    price: 12,
+    currency: 'USD',
+    billing_period: 'MONTHLY' as const,
     features: [
       'Everything in Free',
       'Multi-device synchronization',
@@ -231,12 +242,21 @@ export const planInfo: Record<PlanType, Omit<PlanInfo, 'type'>> = {
       'AI request caching',
       'Priority support',
     ],
-    limits: planLimits.PRO,
+    limits: {
+      ssh_connections: 10,
+      ai_requests: 1000,
+      cloud_history: true,
+      multi_device: true,
+      team_features: false,
+      priority_support: true,
+    },
   },
   TEAM: {
     name: 'Team Tier',
     description: 'Advanced team collaboration and enterprise features',
-    ...planPricing.TEAM,
+    price: 25,
+    currency: 'USD',
+    billing_period: 'MONTHLY' as const,
     features: [
       'Everything in Pro',
       'Team workspaces',
@@ -246,6 +266,13 @@ export const planInfo: Record<PlanType, Omit<PlanInfo, 'type'>> = {
       'SSO integration',
       'Advanced analytics',
     ],
-    limits: planLimits.TEAM,
+    limits: {
+      ssh_connections: 50,
+      ai_requests: 5000,
+      cloud_history: true,
+      multi_device: true,
+      team_features: true,
+      priority_support: true,
+    },
   },
 };
