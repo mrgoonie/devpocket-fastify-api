@@ -74,7 +74,20 @@ export class PaymentController {
     try {
       const plans = Object.entries(planInfo).map(([type, info]) => ({
         type: type as PlanType,
-        ...info,
+        name: info.name,
+        description: info.description,
+        price: info.price,
+        currency: info.currency,
+        billing_period: info.billing_period,
+        features: info.features,
+        limits: {
+          ssh_connections: info.limits.ssh_connections,
+          ai_requests: info.limits.ai_requests,
+          cloud_history: info.limits.cloud_history,
+          multi_device: info.limits.multi_device,
+          team_features: info.limits.team_features,
+          priority_support: info.limits.priority_support,
+        },
       }));
 
       reply.send({ plans });

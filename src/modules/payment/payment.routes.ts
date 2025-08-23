@@ -102,15 +102,15 @@ export async function paymentRoutes(
                 type: 'object',
                 properties: {
                   id: { type: 'string' },
-                  planType: { type: 'string', enum: ['FREE', 'PRO', 'TEAM'] },
+                  plan_type: { type: 'string', enum: ['FREE', 'PRO', 'TEAM'] },
                   status: { type: 'string', enum: ['ACTIVE', 'CANCELLED', 'EXPIRED', 'PAYMENT_FAILED'] },
-                  startedAt: { type: 'string', format: 'date-time' },
-                  expiresAt: { type: 'string', format: 'date-time', nullable: true },
+                  started_at: { type: 'string', format: 'date-time' },
+                  expires_at: { type: 'string', format: 'date-time', nullable: true },
                   limits: {
                     type: 'object',
                     properties: {
-                      sshConnections: { type: 'number' },
-                      aiRequests: { type: 'number' },
+                      ssh_connections: { type: 'number' },
+                      ai_requests: { type: 'number' },
                       cloudHistory: { type: 'boolean' },
                       multiDevice: { type: 'boolean' },
                       teamFeatures: { type: 'boolean' },
@@ -120,8 +120,8 @@ export async function paymentRoutes(
                   usage: {
                     type: 'object',
                     properties: {
-                      sshConnections: { type: 'number' },
-                      aiRequests: { type: 'number' },
+                      ssh_connections: { type: 'number' },
+                      ai_requests: { type: 'number' },
                       resetDate: { type: 'string', format: 'date-time' }
                     }
                   }
@@ -180,7 +180,7 @@ export async function paymentRoutes(
                     description: { type: 'string' },
                     price: { type: 'number' },
                     currency: { type: 'string' },
-                    billingPeriod: { type: 'string' },
+                    billing_period: { type: 'string' },
                     features: {
                       type: 'array',
                       items: { type: 'string' }
@@ -188,12 +188,12 @@ export async function paymentRoutes(
                     limits: {
                       type: 'object',
                       properties: {
-                        sshConnections: { type: 'number' },
-                        aiRequests: { type: 'number' },
-                        cloudHistory: { type: 'boolean' },
-                        multiDevice: { type: 'boolean' },
-                        teamFeatures: { type: 'boolean' },
-                        prioritySupport: { type: 'boolean' }
+                        ssh_connections: { type: 'number' },
+                        ai_requests: { type: 'number' },
+                        cloud_history: { type: 'boolean' },
+                        multi_device: { type: 'boolean' },
+                        team_features: { type: 'boolean' },
+                        priority_support: { type: 'boolean' }
                       }
                     }
                   }
@@ -287,7 +287,7 @@ export async function paymentRoutes(
             properties: {
               allowed: { type: 'boolean' },
               reason: { type: 'string' },
-              currentUsage: { type: 'number' },
+              current_usage: { type: 'number' },
               limit: { type: 'number' }
             }
           },
