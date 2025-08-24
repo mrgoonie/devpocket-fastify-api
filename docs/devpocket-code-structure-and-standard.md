@@ -336,6 +336,24 @@ async function verifyDatabaseConnection(): Promise<void> {
 
 ## API Field Naming Conventions
 
+### API Response Format
+```javascript
+{
+  "success": boolean,
+  "data": object | array | null,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable message",
+    "details": {} // Optional, development only
+  },
+  "meta": {
+    "page": number,
+    "limit": number,
+    "total": number
+  } // For paginated responses
+}
+```
+
 ### Snake Case Standard
 All API request and response fields MUST use `snake_case` naming convention for consistency and developer experience:
 
