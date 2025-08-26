@@ -121,7 +121,7 @@ When delegating to agents, provide only essential context:
 - Use `context7` mcp tools for exploring latest docs of plugins/packages
 - Use `senera` mcp tools for semantic retrieval and editing capabilities
 - Use `psql` bash command to query database for debugging.
-- When you finish the implementation, send a summary report to Discord channel with `./.claude/send-discord.sh "Your message here"` script.
+- When you finish the implementation, send a full summary report to Discord channel with `./.claude/send-discord.sh "Your message here"` script.
 
 ### Subagents
 Delegate tasks to these subagents according to their roles & expertises:
