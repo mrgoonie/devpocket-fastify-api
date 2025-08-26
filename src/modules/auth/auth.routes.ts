@@ -201,6 +201,7 @@ export async function authRoutes(fastify: FastifyInstance) {
               type: 'object',
               properties: {
                 access_token: { type: 'string' },
+                refresh_token: { type: 'string' },
                 expires_in: { type: 'number' }
               }
             },

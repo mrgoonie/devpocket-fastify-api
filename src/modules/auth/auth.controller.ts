@@ -229,6 +229,7 @@ export class AuthController {
         message: 'Token refreshed successfully',
         data: {
           access_token: accessToken,
+          refresh_token: input.refresh_token,
           expires_in: expiresInSeconds,
         },
       });

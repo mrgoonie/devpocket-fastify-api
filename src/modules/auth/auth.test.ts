@@ -32,6 +32,7 @@ interface MeData {
 
 interface RefreshTokenData {
   access_token: string;
+  refresh_token: string;
 }
 
 interface VerifyEmailData {
@@ -247,6 +248,8 @@ describe('Authentication Module', () => {
         const { success, data } = response.json<ApiResponse<RefreshTokenData>>();
         expect(success).toBe(true);
         expect(data.access_token).toBeDefined();
+        expect(data.refresh_token).toBeDefined();
+        expect(data.refresh_token).toBe(result.refreshToken);
       });
 
       it('should fail with invalid refresh token', async () => {
